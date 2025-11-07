@@ -14,7 +14,7 @@ export default function StreamingDisplay({ prompt, response, isStreaming }: Stre
   }
 
   return (
-    <div className="fixed bottom-0 right-0 w-2/3 h-2/3 bg-white border-l-2 border-t-2 border-blue-500 shadow-2xl z-50 flex flex-col">
+    <div className="fixed inset-4 bg-white border-2 border-blue-500 shadow-2xl z-50 flex flex-col rounded-lg">
       <div className="bg-blue-600 text-white px-4 py-2 flex items-center justify-between">
         <span className="font-bold">🧠 Claude 思考中...</span>
         {isStreaming && (

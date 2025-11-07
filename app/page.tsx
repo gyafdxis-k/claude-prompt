@@ -53,7 +53,7 @@ export default function Home() {
     });
   };
 
-  const handleExecuteStep = async (step: WorkflowStep, inputs: Record<string, any>) => {
+  const handleExecuteStep = async (step: WorkflowStep, inputs: Record<string, any>, isNewStep: boolean = false) => {
     if (!context) return;
 
     setIsExecuting(true);
@@ -116,13 +116,36 @@ export default function Home() {
               if (data.type === 'prompt') {
                 console.log('[前端] 收到 Prompt');
                 setStreamingPrompt(data.data);
+              } else if (data.type === 'summarizing') {
+                console.log('[前端] 正在总结对话...');
+                setStreamingResponse('⏳ ' + data.data);
               } else if (data.type === 'chunk') {
                 setStreamingResponse(prev => prev + data.data);
               } else if (data.type === 'done') {
                 console.log('[前端] 执行完成');
-                setContext({
-                  ...updatedContext,
-                  outputs: [...context.outputs, data.data]
+                const conversationTurn = data.data;
+                
+                setContext(prevContext => {
+                  if (!prevContext) return prevContext;
+                  
+                  const currentStepIndex = prevContext.outputs.findIndex(o => o.stepId === step.id);
+                  
+                  if (currentStepIndex >= 0) {
+                    const updatedOutputs = [...prevContext.outputs];
+                    updatedOutputs[currentStepIndex] = {
+                      ...updatedOutputs[currentStepIndex],
+                      conversations: [...updatedOutputs[currentStepIndex].conversations, conversationTurn]
+                    };
+                    return { ...prevContext, outputs: updatedOutputs, inputs: updatedContext.inputs };
+                  } else {
+                    const newStepOutput = {
+                      stepId: step.id,
+                      stepName: step.name,
+                      conversations: [conversationTurn],
+                      completed: false
+                    };
+                    return { ...prevContext, outputs: [...prevContext.outputs, newStepOutput], inputs: updatedContext.inputs };
+                  }
                 });
               } else if (data.type === 'error') {
                 throw new Error(data.data);
@@ -173,6 +196,18 @@ export default function Home() {
         <WorkflowPage
           onExecuteStep={handleExecuteStep}
           onSelectWorkflow={handleSelectWorkflow}
+          onCompleteStep={(stepId) => {
+            if (!context) return;
+            const stepIndex = context.outputs.findIndex(o => o.stepId === stepId);
+            if (stepIndex >= 0) {
+              const updatedOutputs = [...context.outputs];
+              updatedOutputs[stepIndex] = {
+                ...updatedOutputs[stepIndex],
+                completed: true
+              };
+              setContext({ ...context, outputs: updatedOutputs });
+            }
+          }}
           context={context}
           isExecuting={isExecuting}
         />
@@ -185,7 +220,7 @@ export default function Home() {
       />
 
       {showSettings && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-md">
             <h2 className="text-xl font-bold mb-4">设置</h2>
 

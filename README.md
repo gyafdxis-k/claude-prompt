@@ -34,13 +34,27 @@ npm install
 
 ### 2. 配置环境变量
 
-创建 `.env.local` 文件：
+复制示例配置文件并编辑：
+
+```bash
+cp .env.local.example .env.local
+```
+
+然后编辑 `.env.local` 文件，填入你的 API Key：
 
 ```env
-NEXT_PUBLIC_ANTHROPIC_AUTH_TOKEN=sk-your-token-here
-NEXT_PUBLIC_ANTHROPIC_BASE_URL=
+NEXT_PUBLIC_ANTHROPIC_AUTH_TOKEN=sk-ant-xxxxx
+
+# 可选：如果需要使用代理（国内用户）
+# NEXT_PUBLIC_ANTHROPIC_BASE_URL=https://your-proxy-url.com
+
+# 可选：最大输出 token 数
 NEXT_PUBLIC_CLAUDE_CODE_MAX_OUTPUT_TOKENS=32000
 ```
+
+**重要提示**：
+- 不要使用 `claudecode.site` 作为 Base URL，该域名已被 Cloudflare 拦截
+- 如果留空 `NEXT_PUBLIC_ANTHROPIC_BASE_URL`，将使用 Anthropic 官方 API
 
 ### 3. 启动应用
 

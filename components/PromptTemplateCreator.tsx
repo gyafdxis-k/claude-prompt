@@ -71,6 +71,7 @@ export default function PromptTemplateCreator({ isOpen, onClose, onSave }: Promp
       });
 
       if (response.ok) {
+        window.dispatchEvent(new Event('promptsUpdated'));
         onSave(template);
         onClose();
         setName('');

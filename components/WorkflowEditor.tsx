@@ -245,7 +245,7 @@ export default function WorkflowEditor({ isOpen, onClose, onSave, editingWorkflo
       </div>
 
       {showPromptPicker && currentStepIndex !== null && (
-        <div className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-[60]">
+        <div className="fixed inset-0 flex items-center justify-center z-[60]">
           <div className="bg-white rounded-lg w-full max-w-4xl max-h-[80vh] flex flex-col">
             <div className="flex items-center justify-between p-4 border-b">
               <h3 className="text-lg font-bold">选择 Prompt 模板</h3>

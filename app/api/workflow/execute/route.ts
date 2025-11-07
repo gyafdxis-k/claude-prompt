@@ -40,6 +40,9 @@ export async function POST(request: NextRequest) {
     const projectContext = await engine.scanProject();
     console.log('项目技术栈:', projectContext.techStack);
 
+    const currentStepIndex = (previousOutputs || []).findIndex((o: any) => o.stepId === step.id);
+    const currentStepOutput = currentStepIndex >= 0 ? previousOutputs[currentStepIndex] : null;
+    
     const context = {
       workflow: { id: 'temp', name: 'temp', steps: [], config: {} },
       projectPath,
@@ -48,6 +51,8 @@ export async function POST(request: NextRequest) {
       projectContext
     };
 
+    console.log('上下文中的所有步骤:', context.outputs.map((o: any) => ({ stepId: o.stepId, stepName: o.stepName, completed: o.completed, conversations: o.conversations.length })));
+
     console.log('执行步骤:', step.id, step.name);
     console.log('输入参数:', JSON.stringify(inputs, null, 2));
     
@@ -55,6 +60,110 @@ export async function POST(request: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          const MAX_TOKENS = 100000;
+
+          const allPreviousOutputs = context.outputs.filter(o => o.completed);
+          
+          for (let i = 0; i < allPreviousOutputs.length; i++) {
+            const output = allPreviousOutputs[i];
+            const estimatedTokens = output.conversations.reduce((sum, conv) => {
+              return sum + Math.ceil((conv.response.length + (conv.userInput?.length || 0)) / 4);
+            }, 0);
+
+            console.log(`步骤 "${output.stepName}" Token 估计: ${estimatedTokens}`);
+
+            if (estimatedTokens > MAX_TOKENS) {
+              console.log(`步骤 "${output.stepName}" 对话超出限制，开始总结...`);
+              
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ 
+                  type: 'summarizing', 
+                  data: `正在总结 "${output.stepName}" 的对话历史...` 
+                })}\n\n`)
+              );
+
+              const conversationText = output.conversations
+                .map((conv, index) => {
+                  let text = `### 第 ${index + 1} 轮对话\n`;
+                  if (conv.userInput && conv.userInput !== '[系统自动总结]') {
+                    text += `开发者: ${conv.userInput}\n\n`;
+                  }
+                  text += `Claude: ${conv.response}\n`;
+                  return text;
+                })
+                .join('\n---\n');
+
+              const summaryPrompt = `请总结以下对话的核心内容，保留所有关键信息、决策和代码实现要点：\n\n${conversationText}\n\n请用简洁的方式总结，确保不丢失重要信息。`;
+
+              let summaryText = '';
+              for await (const chunk of claudeService.streamMessage(summaryPrompt)) {
+                summaryText += chunk;
+              }
+
+              console.log(`步骤 "${output.stepName}" 总结完成，长度: ${summaryText.length}`);
+              
+              const outputIndex = context.outputs.findIndex(o => o.stepId === output.stepId);
+              if (outputIndex >= 0) {
+                context.outputs[outputIndex].conversations = [
+                  {
+                    prompt: '对话总结',
+                    response: `# ${output.stepName} - 历史对话总结\n\n${summaryText}`,
+                    timestamp: Date.now(),
+                    userInput: '[系统自动总结]'
+                  }
+                ];
+              }
+            }
+          }
+
+          if (currentStepOutput && currentStepOutput.conversations.length > 0) {
+            const estimatedTokens = currentStepOutput.conversations.reduce((sum, conv) => {
+              return sum + Math.ceil((conv.response.length + (conv.userInput?.length || 0)) / 4);
+            }, 0);
+
+            console.log(`当前步骤对话 Token 估计: ${estimatedTokens}`);
+
+            if (estimatedTokens > MAX_TOKENS) {
+              console.log('当前步骤对话超出限制，开始总结...');
+              
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify({ 
+                  type: 'summarizing', 
+                  data: '当前步骤对话历史过长，正在总结...' 
+                })}\n\n`)
+              );
+
+              const conversationText = currentStepOutput.conversations
+                .map((conv, index) => {
+                  let text = `### 第 ${index + 1} 轮对话\n`;
+                  if (conv.userInput && conv.userInput !== '[系统自动总结]') {
+                    text += `开发者: ${conv.userInput}\n\n`;
+                  }
+                  text += `Claude: ${conv.response}\n`;
+                  return text;
+                })
+                .join('\n---\n');
+
+              const summaryPrompt = `请总结以下对话的核心内容，保留所有关键信息、决策和代码实现要点：\n\n${conversationText}\n\n请用简洁的方式总结，确保不丢失重要信息。`;
+
+              let summaryText = '';
+              for await (const chunk of claudeService.streamMessage(summaryPrompt)) {
+                summaryText += chunk;
+              }
+
+              console.log('当前步骤总结完成，长度:', summaryText.length);
+              
+              context.outputs[context.outputs.length - 1].conversations = [
+                {
+                  prompt: '对话总结',
+                  response: `# 历史对话总结\n\n${summaryText}`,
+                  timestamp: Date.now(),
+                  userInput: '[系统自动总结]'
+                }
+              ];
+            }
+          }
+
           const prompt = engine.renderPromptPublic(step.prompt, context);
           
           controller.enqueue(
@@ -77,18 +186,19 @@ export async function POST(request: NextRequest) {
             );
           }
 
-          const output = {
-            stepId: step.id,
-            stepName: step.name,
+          const userInput = inputs.continuationInput || inputs.requirement || inputs.bug_description || inputs.target_code || inputs.refactor_goal || '';
+          
+          const conversationTurn = {
             prompt,
             response: fullResponse,
-            timestamp: Date.now()
+            timestamp: Date.now(),
+            userInput: userInput
           };
 
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ 
               type: 'done', 
-              data: output 
+              data: conversationTurn 
             })}\n\n`)
           );
 

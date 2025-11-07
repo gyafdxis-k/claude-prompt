@@ -25,6 +25,22 @@ export default function PromptTemplateModal({ isOpen, onClose, onSelectTemplate,
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    const handleStorageChange = () => {
+      if (isOpen) {
+        loadPrompts();
+      }
+    };
+    
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('promptsUpdated', handleStorageChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('promptsUpdated', handleStorageChange);
+    };
+  }, [isOpen]);
+
   const loadPrompts = async () => {
     setLoading(true);
     try {
@@ -103,12 +119,45 @@ export default function PromptTemplateModal({ isOpen, onClose, onSelectTemplate,
     onClose();
   };
 
+  const handleDelete = async (template: PromptTemplate) => {
+    if (template.source !== 'custom') {
+      alert('只能删除自定义模板');
+      return;
+    }
+
+    if (!confirm(`确定要删除模板 "${template.name}" 吗？`)) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/prompts/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: template.id, name: template.name, source: template.source })
+      });
+
+      if (response.ok) {
+        alert('删除成功');
+        window.dispatchEvent(new Event('promptsUpdated'));
+        loadPrompts();
+        if (selectedTemplate?.id === template.id) {
+          setSelectedTemplate(null);
+        }
+      } else {
+        alert('删除失败');
+      }
+    } catch (error) {
+      console.error('删除模板失败:', error);
+      alert('删除失败');
+    }
+  };
+
   if (!isOpen) return null;
 
   const renderedPrompt = renderPrompt();
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+    <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg w-full max-w-7xl h-5/6 flex flex-col">
         <div className="flex items-center justify-between p-4 border-b">
           <h2 className="text-xl font-bold">📚 选择真实 Prompt 模板</h2>
@@ -131,8 +180,17 @@ export default function PromptTemplateModal({ isOpen, onClose, onSelectTemplate,
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
               />
-              <div className="text-xs text-gray-600 mt-2">
-                {filteredPrompts.length} 个模板
+              <div className="flex items-center justify-between mt-2">
+                <div className="text-xs text-gray-600">
+                  {filteredPrompts.length} 个模板
+                </div>
+                <button
+                  onClick={loadPrompts}
+                  disabled={loading}
+                  className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50"
+                >
+                  🔄 刷新
+                </button>
               </div>
             </div>
 
@@ -143,26 +201,49 @@ export default function PromptTemplateModal({ isOpen, onClose, onSelectTemplate,
                 filteredPrompts.map(prompt => (
                   <div
                     key={prompt.id}
-                    onClick={() => handleSelectTemplate(prompt)}
-                    className={`p-2 border rounded cursor-pointer transition-all text-sm ${
+                    className={`p-2 border rounded transition-all text-sm ${
                       selectedTemplate?.id === prompt.id
                         ? 'border-blue-500 bg-blue-50'
                         : 'border-gray-200 hover:border-blue-300'
                     }`}
                   >
-                    <div className="font-bold text-xs mb-1">{prompt.name}</div>
-                    <div className="text-xs text-gray-600 line-clamp-1 mb-1">
-                      {prompt.description}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">
-                        {prompt.category}
-                      </span>
-                      {prompt.parameters.length > 0 && (
-                        <span className="text-xs text-purple-600">
-                          {prompt.parameters.length}参数
+                    <div 
+                      onClick={() => handleSelectTemplate(prompt)}
+                      className="cursor-pointer"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="font-bold text-xs">{prompt.name}</div>
+                        {prompt.source === 'custom' && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(prompt);
+                            }}
+                            className="text-red-500 hover:text-red-700 text-xs px-1"
+                            title="删除模板"
+                          >
+                            🗑️
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-600 line-clamp-1 mb-1">
+                        {prompt.description}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded">
+                          {prompt.category}
                         </span>
-                      )}
+                        {prompt.source === 'custom' && (
+                          <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
+                            自定义
+                          </span>
+                        )}
+                        {prompt.parameters.length > 0 && (
+                          <span className="text-xs text-purple-600">
+                            {prompt.parameters.length}参数
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 ))
