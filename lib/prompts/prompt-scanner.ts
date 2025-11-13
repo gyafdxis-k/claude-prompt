@@ -6,6 +6,7 @@ export interface PromptTemplate {
   name: string;
   description: string;
   category: string;
+  categories: string[];
   source: string;
   content: string;
   parameters: PromptParameter[];
@@ -57,6 +58,7 @@ export class PromptScanner {
             name: this.generateName(item, 'Agents'),
             description: this.extractDescription(content, 'Agents'),
             category: 'Agents',
+            categories: ['ai'],
             source: itemPath,
             content,
             parameters: this.extractParameters(content)
@@ -98,6 +100,7 @@ export class PromptScanner {
             name: this.generateName(file, category),
             description: this.extractDescription(content, category),
             category,
+            categories: this.inferCategories(category, content),
             source: filePath,
             content,
             parameters: this.extractParameters(content)
@@ -258,19 +261,59 @@ export class PromptScanner {
     return allPrompts.filter(p => p.category.includes(category));
   }
 
+  private inferCategories(category: string, content: string): string[] {
+    const categories: string[] = [];
+    const lowerContent = content.toLowerCase();
+    
+    if (category.toLowerCase().includes('agent')) categories.push('ai');
+    if (category.toLowerCase().includes('coding') || category.toLowerCase().includes('code')) categories.push('development');
+    if (category.toLowerCase().includes('debug') || lowerContent.includes('bug') || lowerContent.includes('fix')) categories.push('debug');
+    if (category.toLowerCase().includes('review') || lowerContent.includes('review')) categories.push('review');
+    if (category.toLowerCase().includes('test') || lowerContent.includes('test')) categories.push('test');
+    if (category.toLowerCase().includes('refactor') || lowerContent.includes('refactor')) categories.push('refactor');
+    if (category.toLowerCase().includes('doc') || lowerContent.includes('documentation')) categories.push('documentation');
+    if (lowerContent.includes('architect') || lowerContent.includes('design')) categories.push('architecture');
+    if (lowerContent.includes('database') || lowerContent.includes('sql')) categories.push('database');
+    if (lowerContent.includes('performance') || lowerContent.includes('optimize')) categories.push('performance');
+    if (lowerContent.includes('security') || lowerContent.includes('vulnerability')) categories.push('security');
+    if (lowerContent.includes('deploy') || lowerContent.includes('ci/cd')) categories.push('deployment');
+    
+    if (categories.length === 0) {
+      categories.push('custom');
+    }
+    
+    return categories;
+  }
+
   renderPrompt(template: PromptTemplate, params: Record<string, any>): string {
     let rendered = template.content;
 
-    for (const [key, value] of Object.entries(params)) {
+    const allParamNames = new Set<string>();
+    const variablePatterns = [
+      /\$\{(\w+)\}/g,
+      /\{\{(\w+)\}\}/g,
+      /<(\w+)>/g,
+      /\[(\w+)\]/g
+    ];
+
+    for (const pattern of variablePatterns) {
+      let match;
+      while ((match = pattern.exec(template.content)) !== null) {
+        allParamNames.add(match[1]);
+      }
+    }
+
+    for (const paramName of allParamNames) {
+      const value = params[paramName] !== undefined ? params[paramName] : '';
       const patterns = [
-        new RegExp(`\\$\\{${key}\\}`, 'g'),
-        new RegExp(`\\{\\{${key}\\}\\}`, 'g'),
-        new RegExp(`<${key}>`, 'g'),
-        new RegExp(`\\[${key}\\]`, 'g')
+        new RegExp(`\\$\\{${paramName}\\}`, 'g'),
+        new RegExp(`\\{\\{${paramName}\\}\\}`, 'g'),
+        new RegExp(`<${paramName}>`, 'g'),
+        new RegExp(`\\[${paramName}\\]`, 'g')
       ];
 
       for (const pattern of patterns) {
-        rendered = rendered.replace(pattern, String(value || ''));
+        rendered = rendered.replace(pattern, String(value));
       }
     }
 

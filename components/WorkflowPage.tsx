@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { workflows, Workflow, WorkflowStep } from '@/lib/workflows/workflow-templates';
 import { WorkflowExecutionContext, StepOutput } from '@/lib/workflows/workflow-engine';
 import { PromptTemplate } from '@/lib/prompts/prompt-scanner';
@@ -8,6 +8,7 @@ import PromptTemplateModal from './PromptTemplateModal';
 import MarkdownRenderer from './MarkdownRenderer';
 import WorkflowEditor from './WorkflowEditor';
 import PromptTemplateCreator from './PromptTemplateCreator';
+import ToolCallDisplay from './ToolCallDisplay';
 
 interface WorkflowPageProps {
   onExecuteStep: (step: WorkflowStep, inputs: Record<string, any>) => Promise<void>;
@@ -27,6 +28,22 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
   const [selectedConversationIndex, setSelectedConversationIndex] = useState<number>(0);
   const [showOldConversations, setShowOldConversations] = useState(false);
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
+  
+  const toggleMessageExpanded = useCallback((messageId: string) => {
+    setExpandedMessages(prev => {
+      const next = new Set(prev);
+      if (next.has(messageId)) {
+        next.delete(messageId);
+      } else {
+        next.add(messageId);
+      }
+      return next;
+    });
+  }, []);
+  
+  const shouldShowExpandButton = useCallback((content: string) => {
+    return content.length > 300;
+  }, []);
   const [showContextModal, setShowContextModal] = useState(false);
   const [selectedOutputIndex, setSelectedOutputIndex] = useState<number | null>(null);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
@@ -38,6 +55,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
   const [editingStepName, setEditingStepName] = useState('');
+  const [fullPromptPreview, setFullPromptPreview] = useState<string>('');
 
   useEffect(() => {
     if (context && context.outputs.length > 0) {
@@ -62,36 +80,44 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
     }
   };
 
-  const renderPromptPreview = (step: WorkflowStep | null): string => {
-    if (!step || !context) return '';
-    if (!step) return '';
+  const currentStep = useMemo(() => {
+    return customStep || workflowSteps[currentStepIndex];
+  }, [customStep, workflowSteps, currentStepIndex]);
 
-    let rendered = step.prompt;
+  const currentOutput = useMemo(() => {
+    return context?.outputs[currentStepIndex];
+  }, [context?.outputs, currentStepIndex]);
+
+  const loadFullPromptPreview = useCallback(async (step: WorkflowStep) => {
+    if (!context) return;
     
-    for (const [key, value] of Object.entries(inputs)) {
-      rendered = rendered.replace(new RegExp(`{{${key}}}`, 'g'), String(value || `[${key}]`));
-    }
-
-    if (context.outputs.length > 0 && rendered.includes('{{previous_output}}')) {
-      const previousStep = context.outputs[context.outputs.length - 1];
-      if (previousStep.conversations.length > 0) {
-        const previousOutput = previousStep.conversations[previousStep.conversations.length - 1].response;
-        const preview = previousOutput.length > 200 
-          ? previousOutput.substring(0, 200) + '...' 
-          : previousOutput;
-        rendered = rendered.replace(/{{previous_output}}/g, preview);
+    try {
+      const response = await fetch('/api/workflow/render-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          step,
+          context: {
+            ...context,
+            inputs: { ...context.inputs, ...inputs }
+          }
+        })
+      });
+      
+      const data = await response.json();
+      if (data.prompt) {
+        setFullPromptPreview(data.prompt);
       }
+    } catch (error) {
+      console.error('加载 Prompt 预览失败:', error);
     }
+  }, [context, inputs]);
 
-    rendered = rendered.replace(/{{project_path}}/g, context.projectPath || '[项目路径]');
-    rendered = rendered.replace(/{{tech_stack}}/g, context.projectContext?.techStack.join(', ') || '[技术栈]');
-    rendered = rendered.replace(/{{test_framework}}/g, context.projectContext?.testFramework || '[测试框架]');
-    rendered = rendered.replace(/{{git_diff}}/g, '[Git变更]');
-    rendered = rendered.replace(/{{codebase_files}}/g, '[代码库文件]');
-    rendered = rendered.replace(/{{all_changes}}/g, '[所有变更]');
-
-    return rendered;
-  };
+  useEffect(() => {
+    if (showPromptPreview && currentStep) {
+      loadFullPromptPreview(currentStep);
+    }
+  }, [showPromptPreview, currentStep, loadFullPromptPreview]);
 
   const handleExecuteStep = async (stepToExecute?: WorkflowStep) => {
     if (!selectedWorkflow || !context) return;
@@ -111,32 +137,29 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
   const handleCompleteStep = () => {
     if (!context || !selectedWorkflow) return;
     
-    const currentStep = workflowSteps[currentStepIndex];
-    onCompleteStep(currentStep.id);
+    const stepToComplete = workflowSteps[currentStepIndex];
+    onCompleteStep(stepToComplete.id);
     
     setUserInput('');
     setCustomStep(null);
     setCustomPrompt('');
   };
 
-  const toggleMessageExpanded = (messageId: string) => {
-    setExpandedMessages(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(messageId)) {
-        newSet.delete(messageId);
-      } else {
-        newSet.add(messageId);
-      }
-      return newSet;
-    });
-  };
-
-  const shouldShowExpandButton = (text: string) => {
-    return text.split('\n').length > 2 || text.length > 150;
-  };
-
-  const currentStep = customStep || workflowSteps[currentStepIndex];
-  const currentOutput = context?.outputs[currentStepIndex];
+  useEffect(() => {
+    if (context?.outputs) {
+      console.log('[WorkflowPage] Context outputs 更新:', context.outputs.map(o => ({
+        stepId: o.stepId,
+        stepName: o.stepName,
+        conversationCount: o.conversations.length,
+        completed: o.completed
+      })));
+      console.log('[WorkflowPage] 当前步骤索引:', currentStepIndex);
+      console.log('[WorkflowPage] 当前步骤输出:', currentOutput ? {
+        stepId: currentOutput.stepId,
+        conversationCount: currentOutput.conversations.length
+      } : 'null');
+    }
+  }, [context?.outputs, currentStepIndex, currentOutput]);
 
   return (
     <div className="flex h-full">
@@ -396,25 +419,25 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                             <div key={actualIndex} className="space-y-3">
                               {conv.userInput && conv.userInput.trim() && (
                                 <div className="flex gap-3">
-                                  <div className="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                  <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white shadow-sm">
                                     👤
                                   </div>
-                                  <div className="flex-1 bg-blue-50 border border-blue-200 rounded-lg p-4 max-w-full overflow-hidden">
+                                  <div className="flex-1 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg p-4 max-w-full overflow-hidden border border-blue-100">
                                     <div className="flex items-center justify-between mb-2">
-                                      <div className="text-xs text-blue-600 font-medium">
-                                        开发者 · 第 {actualIndex + 1} 轮 · {new Date(conv.timestamp).toLocaleTimeString('zh-CN')}
+                                      <div className="text-xs text-gray-400 font-medium">
+                                        第 {actualIndex + 1} 轮 · {new Date(conv.timestamp).toLocaleTimeString('zh-CN')}
                                       </div>
                                       {shouldShowExpandButton(conv.userInput) && (
                                         <button
                                           onClick={() => toggleMessageExpanded(`user-${actualIndex}`)}
-                                          className="text-xs text-blue-600 hover:text-blue-800 px-2 py-1 hover:bg-blue-100 rounded"
+                                          className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 hover:bg-white/50 rounded transition-colors"
                                         >
                                           {expandedMessages.has(`user-${actualIndex}`) ? '收起' : '展开'}
                                         </button>
                                       )}
                                     </div>
-                                    <div className={`text-sm text-gray-800 whitespace-pre-wrap ${
-                                      expandedMessages.has(`user-${actualIndex}`) ? '' : 'line-clamp-2'
+                                    <div className={`text-sm text-gray-700 whitespace-pre-wrap ${
+                                      expandedMessages.has(`user-${actualIndex}`) ? '' : 'line-clamp-3'
                                     }`}>
                                       {conv.userInput}
                                     </div>
@@ -423,34 +446,37 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                               )}
                               
                               <div className="flex gap-3">
-                                <div className="flex-shrink-0 w-8 h-8 bg-purple-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
+                                <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white shadow-sm">
                                   🤖
                                 </div>
-                                <div className="flex-1 bg-white border border-gray-200 rounded-lg p-4 shadow-sm max-w-full overflow-hidden">
-                                  <div className="flex items-center justify-between mb-2">
-                                    <div className="text-xs text-purple-600 font-medium">
-                                      Claude · 第 {actualIndex + 1} 轮 · {new Date(conv.timestamp).toLocaleTimeString('zh-CN')}
+                                <div className="flex-1 bg-white rounded-lg p-5 shadow-sm border border-gray-100 max-w-full overflow-hidden">
+                                  <div className="flex items-center justify-between mb-4">
+                                    <div className="text-xs text-gray-400 font-medium">
+                                      第 {actualIndex + 1} 轮 · {new Date(conv.timestamp).toLocaleTimeString('zh-CN')}
                                     </div>
                                     <div className="flex gap-2">
                                       {shouldShowExpandButton(conv.response) && (
                                         <button
                                           onClick={() => toggleMessageExpanded(`claude-${actualIndex}`)}
-                                          className="text-xs text-purple-600 hover:text-purple-800 px-2 py-1 hover:bg-purple-100 rounded"
+                                          className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 hover:bg-gray-50 rounded transition-colors"
                                         >
                                           {expandedMessages.has(`claude-${actualIndex}`) ? '收起' : '展开'}
                                         </button>
                                       )}
                                       <button
                                         onClick={() => navigator.clipboard.writeText(conv.response)}
-                                        className="text-xs text-gray-500 hover:text-gray-700 px-2 py-1 hover:bg-gray-100 rounded"
+                                        className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 hover:bg-gray-50 rounded transition-colors"
                                       >
-                                        📋 复制
+                                        📋
                                       </button>
                                     </div>
                                   </div>
-                                  <div className={`prose prose-sm max-w-none ${
-                                    expandedMessages.has(`claude-${actualIndex}`) ? '' : 'line-clamp-2'
-                                  }`}>
+                                  {expandedMessages.has(`claude-${actualIndex}`) && (conv as any).toolCalls && (conv as any).toolCalls.length > 0 && (
+                                    <div className="mb-4">
+                                      <ToolCallDisplay toolCalls={(conv as any).toolCalls} />
+                                    </div>
+                                  )}
+                                  <div className={expandedMessages.has(`claude-${actualIndex}`) ? '' : 'line-clamp-3'}>
                                     <MarkdownRenderer content={conv.response} />
                                   </div>
                                 </div>
@@ -486,9 +512,9 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                         <button
                           onClick={() => handleExecuteStep()}
                           disabled={isExecuting}
-                          className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-wait transition-all"
                         >
-                          {isExecuting ? '执行中...' : '🚀 开始此步骤'}
+                          {isExecuting ? '⏳ 执行中...' : '🚀 开始此步骤'}
                         </button>
                       )}
 
@@ -497,9 +523,9 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                           <button
                             onClick={() => handleExecuteStep()}
                             disabled={isExecuting}
-                            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400"
+                            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-wait transition-all"
                           >
-                            {isExecuting ? '执行中...' : '💬 继续对话'}
+                            {isExecuting ? '⏳ 执行中...' : '💬 继续对话'}
                           </button>
                           <button
                             onClick={handleCompleteStep}
@@ -592,8 +618,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                     )}
                     <button
                       onClick={() => {
-                        const preview = renderPromptPreview(currentStep);
-                        navigator.clipboard.writeText(preview);
+                        navigator.clipboard.writeText(fullPromptPreview);
                       }}
                       className="text-sm text-gray-600 hover:text-gray-800"
                     >
@@ -601,8 +626,8 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                     </button>
                   </div>
                 </h3>
-                <pre className="text-sm whitespace-pre-wrap font-mono bg-white p-4 rounded border border-gray-300">
-                  {renderPromptPreview(currentStep)}
+                <pre className="text-sm whitespace-pre-wrap font-mono bg-white p-4 rounded border border-gray-300 max-h-[600px] overflow-y-auto">
+                  {fullPromptPreview || '加载中...'}
                 </pre>
               </div>
             )}

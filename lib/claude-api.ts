@@ -67,6 +67,9 @@ export class ClaudeService {
       model?: string;
       maxTokens?: number;
       temperature?: number;
+      tools?: any[];
+      onToolUse?: (toolName: string, toolInput: any) => Promise<any>;
+      onToolCall?: (toolCall: { tool: string; params: any; result?: any; error?: string }) => void;
     }
   ): AsyncGenerator<string, void, unknown> {
     console.log('[Claude Service] streamMessage 开始');
@@ -84,30 +87,126 @@ export class ClaudeService {
     console.log('[Claude Service] Max Tokens:', maxTokens);
 
     try {
-      const stream = await this.client.messages.create({
-        model,
-        max_tokens: maxTokens,
-        temperature: options?.temperature || 0.7,
-        messages: [
-          {
-            role: 'user',
-            content: prompt
+      const messages: any[] = [
+        {
+          role: 'user',
+          content: prompt
+        }
+      ];
+
+      let continueLoop = true;
+
+      while (continueLoop) {
+        const requestParams: any = {
+          model,
+          max_tokens: maxTokens,
+          temperature: options?.temperature || 0.7,
+          messages,
+          stream: true
+        };
+
+        if (options?.tools && options.tools.length > 0) {
+          requestParams.tools = options.tools;
+        }
+
+        const stream = await this.client.messages.create(requestParams);
+
+        console.log('[Claude Service] 流式响应开始');
+        let totalChunks = 0;
+        let currentText = '';
+        let toolUses: any[] = [];
+
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            totalChunks++;
+            currentText += event.delta.text;
+            yield event.delta.text;
+          } else if (event.type === 'content_block_start' && event.content_block.type === 'tool_use') {
+            console.log('[Claude Service] Tool use started:', event.content_block.name);
+            toolUses.push({
+              id: event.content_block.id,
+              name: event.content_block.name,
+              input: {}
+            });
+          } else if (event.type === 'content_block_delta' && event.delta.type === 'input_json_delta') {
+            const lastTool = toolUses[toolUses.length - 1];
+            if (lastTool) {
+              const inputStr = JSON.stringify(lastTool.input) + event.delta.partial_json;
+              try {
+                lastTool.input = JSON.parse(inputStr);
+              } catch {
+                lastTool.inputPartial = (lastTool.inputPartial || '') + event.delta.partial_json;
+              }
+            }
+          } else if (event.type === 'message_stop') {
+            continueLoop = false;
           }
-        ],
-        stream: true
-      });
+        }
 
-      console.log('[Claude Service] 流式响应开始');
-      let totalChunks = 0;
+        console.log('[Claude Service] 流式响应完成, 总块数:', totalChunks);
 
-      for await (const event of stream) {
-        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-          totalChunks++;
-          yield event.delta.text;
+        if (toolUses.length > 0 && options?.onToolUse) {
+          console.log('[Claude Service] 执行工具调用:', toolUses.length);
+          
+          messages.push({
+            role: 'assistant',
+            content: [
+              ...(currentText ? [{ type: 'text', text: currentText }] : []),
+              ...toolUses.map(tool => ({
+                type: 'tool_use',
+                id: tool.id,
+                name: tool.name,
+                input: tool.inputPartial ? JSON.parse(tool.inputPartial) : tool.input
+              }))
+            ]
+          });
+
+          const toolResults = [];
+          for (const tool of toolUses) {
+            try {
+              const input = tool.inputPartial ? JSON.parse(tool.inputPartial) : tool.input;
+              const result = await options.onToolUse(tool.name, input);
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: tool.id,
+                content: JSON.stringify(result)
+              });
+              
+              if (options.onToolCall) {
+                options.onToolCall({
+                  tool: tool.name,
+                  params: input,
+                  result
+                });
+              }
+            } catch (error: any) {
+              toolResults.push({
+                type: 'tool_result',
+                tool_use_id: tool.id,
+                content: `Error: ${error.message}`,
+                is_error: true
+              });
+              
+              if (options.onToolCall) {
+                options.onToolCall({
+                  tool: tool.name,
+                  params: tool.inputPartial ? JSON.parse(tool.inputPartial) : tool.input,
+                  error: error.message
+                });
+              }
+            }
+          }
+
+          messages.push({
+            role: 'user',
+            content: toolResults
+          });
+
+          continueLoop = true;
+        } else {
+          continueLoop = false;
         }
       }
-      
-      console.log('[Claude Service] 流式响应完成, 总块数:', totalChunks);
     } catch (error: any) {
       console.error('[Claude Service] 流式响应错误:', error.message);
       console.error('[Claude Service] 错误详情:', error);

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { PromptTemplate, PromptParameter } from '@/lib/prompts/prompt-scanner';
+import CategorySelector from './CategorySelector';
 
 interface PromptTemplateCreatorProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ export default function PromptTemplateCreator({ isOpen, onClose, onSave }: Promp
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [category, setCategory] = useState('Custom');
+  const [categories, setCategories] = useState<string[]>(['custom']);
   const [content, setContent] = useState('');
 
   if (!isOpen) return null;
@@ -53,11 +55,17 @@ export default function PromptTemplateCreator({ isOpen, onClose, onSave }: Promp
       return;
     }
 
+    if (categories.length === 0) {
+      alert('请至少选择一个分类');
+      return;
+    }
+
     const template: PromptTemplate = {
       id: `custom-${Date.now()}`,
       name,
       description: description || `自定义 ${name} 模板`,
       category,
+      categories,
       source: 'custom',
       content,
       parameters: extractParameters(content)
@@ -76,6 +84,7 @@ export default function PromptTemplateCreator({ isOpen, onClose, onSave }: Promp
         onClose();
         setName('');
         setDescription('');
+        setCategories(['custom']);
         setContent('');
       } else {
         alert('保存失败');
@@ -102,29 +111,23 @@ export default function PromptTemplateCreator({ isOpen, onClose, onSave }: Promp
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">模板名称 *</label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                placeholder="例如: Python 代码审查"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium mb-1">分类</label>
-              <input
-                type="text"
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md"
-                placeholder="Custom"
-              />
-            </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">模板名称 *</label>
+            <input
+              type="text"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md"
+              placeholder="例如: Python 代码审查"
+            />
           </div>
+
+          <CategorySelector
+            selectedCategories={categories}
+            onChange={setCategories}
+            multiple={true}
+            required={true}
+          />
 
           <div>
             <label className="block text-sm font-medium mb-1">描述</label>

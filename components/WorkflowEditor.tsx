@@ -95,7 +95,8 @@ export default function WorkflowEditor({ isOpen, onClose, onSave, editingWorkflo
       name,
       description,
       icon,
-      steps
+      steps,
+      config: {}
     };
 
     onSave(workflow);

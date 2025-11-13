@@ -1,13 +1,15 @@
 import { NextRequest } from 'next/server';
 import { claudeService } from '@/lib/claude-api';
 import { WorkflowEngine } from '@/lib/workflows/workflow-engine';
+import { FILE_OPERATION_TOOLS, createSystemPromptWithFileOps } from '@/lib/file-bridge/claude-tools';
+import { ServerFileOperations } from '@/lib/file-bridge/server-file-ops';
+
+const projectContextCache = new Map<string, { context: any; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000;
 
 export async function POST(request: NextRequest) {
-  console.log('=== API /workflow/execute 开始 ===');
-  
   try {
     const body = await request.json();
-    console.log('请求体:', JSON.stringify(body, null, 2));
     
     const { step, inputs, projectPath, previousOutputs } = body;
 
@@ -20,8 +22,6 @@ export async function POST(request: NextRequest) {
     }
 
     const authToken = process.env.NEXT_PUBLIC_ANTHROPIC_AUTH_TOKEN || process.env.ANTHROPIC_AUTH_TOKEN;
-    console.log('API Key状态:', authToken ? '已配置' : '未配置');
-    console.log('BASE_URL:', process.env.NEXT_PUBLIC_ANTHROPIC_BASE_URL || '默认');
 
     if (!authToken) {
       return new Response(
@@ -30,133 +30,71 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log('初始化 Claude Service...');
     claudeService.initialize(authToken);
-    
-    console.log('初始化 Workflow Engine...');
     const engine = new WorkflowEngine(claudeService, projectPath);
 
-    console.log('扫描项目上下文...');
-    const projectContext = await engine.scanProject();
-    console.log('项目技术栈:', projectContext.techStack);
+    let projectContext;
+    const cached = projectContextCache.get(projectPath);
+    const now = Date.now();
+    
+    if (cached && (now - cached.timestamp) < CACHE_TTL) {
+      projectContext = cached.context;
+    } else {
+      projectContext = await engine.scanProject();
+      projectContextCache.set(projectPath, { context: projectContext, timestamp: now });
+    }
 
     const currentStepIndex = (previousOutputs || []).findIndex((o: any) => o.stepId === step.id);
     const currentStepOutput = currentStepIndex >= 0 ? previousOutputs[currentStepIndex] : null;
     
     const context = {
-      workflow: { id: 'temp', name: 'temp', steps: [], config: {} },
+      workflow: { id: 'temp', name: 'temp', description: '', icon: '⚡', steps: [], config: {} },
       projectPath,
       inputs: inputs || {},
       outputs: previousOutputs || [],
       projectContext
     };
-
-    console.log('上下文中的所有步骤:', context.outputs.map((o: any) => ({ stepId: o.stepId, stepName: o.stepName, completed: o.completed, conversations: o.conversations.length })));
-
-    console.log('执行步骤:', step.id, step.name);
-    console.log('输入参数:', JSON.stringify(inputs, null, 2));
     
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          const MAX_TOKENS = 100000;
-
-          const allPreviousOutputs = context.outputs.filter(o => o.completed);
+          const taskDescription = `${step.name}: ${inputs.continuationInput || inputs.requirement || inputs.bug_description || inputs.target_code || inputs.refactor_goal || '执行任务'}`;
           
-          for (let i = 0; i < allPreviousOutputs.length; i++) {
-            const output = allPreviousOutputs[i];
-            const estimatedTokens = output.conversations.reduce((sum, conv) => {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ 
+              type: 'task_info', 
+              data: {
+                stepName: step.name,
+                description: taskDescription.substring(0, 200),
+                projectPath: projectPath.split('/').pop()
+              }
+            })}\n\n`)
+          );
+
+          const MAX_TOKENS = 50000;
+
+          if (currentStepOutput && currentStepOutput.conversations.length > 5) {
+            const estimatedTokens = currentStepOutput.conversations.reduce((sum: number, conv: any) => {
               return sum + Math.ceil((conv.response.length + (conv.userInput?.length || 0)) / 4);
             }, 0);
 
-            console.log(`步骤 "${output.stepName}" Token 估计: ${estimatedTokens}`);
-
-            if (estimatedTokens > MAX_TOKENS) {
-              console.log(`步骤 "${output.stepName}" 对话超出限制，开始总结...`);
-              
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ 
-                  type: 'summarizing', 
-                  data: `正在总结 "${output.stepName}" 的对话历史...` 
-                })}\n\n`)
-              );
-
-              const conversationText = output.conversations
-                .map((conv, index) => {
-                  let text = `### 第 ${index + 1} 轮对话\n`;
-                  if (conv.userInput && conv.userInput !== '[系统自动总结]') {
-                    text += `开发者: ${conv.userInput}\n\n`;
-                  }
-                  text += `Claude: ${conv.response}\n`;
-                  return text;
-                })
-                .join('\n---\n');
-
-              const summaryPrompt = `请总结以下对话的核心内容，保留所有关键信息、决策和代码实现要点：\n\n${conversationText}\n\n请用简洁的方式总结，确保不丢失重要信息。`;
-
-              let summaryText = '';
-              for await (const chunk of claudeService.streamMessage(summaryPrompt)) {
-                summaryText += chunk;
-              }
-
-              console.log(`步骤 "${output.stepName}" 总结完成，长度: ${summaryText.length}`);
-              
-              const outputIndex = context.outputs.findIndex(o => o.stepId === output.stepId);
-              if (outputIndex >= 0) {
-                context.outputs[outputIndex].conversations = [
-                  {
-                    prompt: '对话总结',
-                    response: `# ${output.stepName} - 历史对话总结\n\n${summaryText}`,
-                    timestamp: Date.now(),
-                    userInput: '[系统自动总结]'
-                  }
-                ];
-              }
-            }
-          }
-
-          if (currentStepOutput && currentStepOutput.conversations.length > 0) {
-            const estimatedTokens = currentStepOutput.conversations.reduce((sum, conv) => {
-              return sum + Math.ceil((conv.response.length + (conv.userInput?.length || 0)) / 4);
-            }, 0);
-
-            console.log(`当前步骤对话 Token 估计: ${estimatedTokens}`);
-
-            if (estimatedTokens > MAX_TOKENS) {
-              console.log('当前步骤对话超出限制，开始总结...');
-              
-              controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify({ 
-                  type: 'summarizing', 
-                  data: '当前步骤对话历史过长，正在总结...' 
-                })}\n\n`)
-              );
-
+            if (estimatedTokens > MAX_TOKENS && !currentStepOutput.conversations.some((c: any) => c.userInput === '[系统自动总结]')) {
               const conversationText = currentStepOutput.conversations
-                .map((conv, index) => {
-                  let text = `### 第 ${index + 1} 轮对话\n`;
-                  if (conv.userInput && conv.userInput !== '[系统自动总结]') {
-                    text += `开发者: ${conv.userInput}\n\n`;
-                  }
-                  text += `Claude: ${conv.response}\n`;
-                  return text;
-                })
-                .join('\n---\n');
+                .map((conv: any) => `${conv.userInput || ''}\n${conv.response}`)
+                .join('\n\n');
 
-              const summaryPrompt = `请总结以下对话的核心内容，保留所有关键信息、决策和代码实现要点：\n\n${conversationText}\n\n请用简洁的方式总结，确保不丢失重要信息。`;
+              const summaryPrompt = `简要总结以下对话的关键决策和代码修改（500字内）:\n\n${conversationText.substring(0, 10000)}`;
 
               let summaryText = '';
-              for await (const chunk of claudeService.streamMessage(summaryPrompt)) {
+              for await (const chunk of claudeService.streamMessage(summaryPrompt, { maxTokens: 2000 })) {
                 summaryText += chunk;
               }
-
-              console.log('当前步骤总结完成，长度:', summaryText.length);
               
               context.outputs[context.outputs.length - 1].conversations = [
                 {
                   prompt: '对话总结',
-                  response: `# 历史对话总结\n\n${summaryText}`,
+                  response: `# 总结\n\n${summaryText}`,
                   timestamp: Date.now(),
                   userInput: '[系统自动总结]'
                 }
@@ -164,18 +102,69 @@ export async function POST(request: NextRequest) {
             }
           }
 
-          const prompt = engine.renderPromptPublic(step.prompt, context);
-          
           controller.enqueue(
             encoder.encode(`data: ${JSON.stringify({ 
-              type: 'prompt', 
-              data: prompt 
+              type: 'preparing', 
+              data: '准备执行...' 
             })}\n\n`)
           );
 
+          let prompt = engine.renderPromptPublic(step.prompt, context);
+          prompt = createSystemPromptWithFileOps(prompt, projectPath, projectContext);
+
+          const fileOps = new ServerFileOperations([projectPath]);
+          const toolCalls: any[] = [];
+
+          const handleToolUse = async (toolName: string, toolInput: any) => {
+            console.log(`[Tool] 执行工具: ${toolName}`, toolInput);
+            
+            switch (toolName) {
+              case 'execute_command':
+                const cmdResult = await fileOps.executeCommand(
+                  toolInput.command, 
+                  toolInput.cwd || projectPath
+                );
+                return cmdResult;
+              
+              case 'read_file':
+                const content = await fileOps.readFile(toolInput.path);
+                return { content };
+              
+              case 'write_file':
+                await fileOps.writeFile(toolInput.path, toolInput.content);
+                return { success: true, message: `文件已写入: ${toolInput.path}` };
+              
+              case 'edit_file':
+                await fileOps.editFile(toolInput.path, toolInput.old_string, toolInput.new_string);
+                return { success: true, message: `文件已编辑: ${toolInput.path}` };
+              
+              case 'list_files':
+                const files = await fileOps.listFiles(toolInput.directory, toolInput.pattern);
+                return { files };
+              
+              default:
+                throw new Error(`未知工具: ${toolName}`);
+            }
+          };
+
+          const handleToolCall = (toolCall: any) => {
+            toolCalls.push(toolCall);
+            
+            controller.enqueue(
+              encoder.encode(`data: ${JSON.stringify({ 
+                type: 'tool_call', 
+                data: toolCall 
+              })}\n\n`)
+            );
+          };
+
           let fullResponse = '';
           
-          for await (const chunk of claudeService.streamMessage(prompt)) {
+          for await (const chunk of claudeService.streamMessage(prompt, {
+            tools: FILE_OPERATION_TOOLS,
+            onToolUse: handleToolUse,
+            onToolCall: handleToolCall
+          })) {
             fullResponse += chunk;
             
             controller.enqueue(
@@ -192,7 +181,8 @@ export async function POST(request: NextRequest) {
             prompt,
             response: fullResponse,
             timestamp: Date.now(),
-            userInput: userInput
+            userInput: userInput,
+            toolCalls
           };
 
           controller.enqueue(
@@ -202,9 +192,6 @@ export async function POST(request: NextRequest) {
             })}\n\n`)
           );
 
-          console.log('步骤执行完成，响应长度:', fullResponse.length);
-          console.log('=== API /workflow/execute 完成 ===');
-          
           controller.close();
         } catch (error: any) {
           console.error('=== 流式处理错误 ===');

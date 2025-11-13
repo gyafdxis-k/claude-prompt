@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Claude Local File Bridge",
+  "version": "1.0.0",
+  "description": "Bridge between Claude.ai and local file system",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://claude.ai/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://claude.ai/*"],
+      "js": ["content.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html"
+  }
+}

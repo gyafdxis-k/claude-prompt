@@ -18,6 +18,8 @@ export default function Home() {
   const [initialInputs, setInitialInputs] = useState<Record<string, any>>({});
   const [streamingPrompt, setStreamingPrompt] = useState('');
   const [streamingResponse, setStreamingResponse] = useState('');
+  const [taskInfo, setTaskInfo] = useState<any>(null);
+  const [isSelectingFolder, setIsSelectingFolder] = useState(false);
 
   useEffect(() => {
     const savedPath = localStorage.getItem('projectPath') || '/Users/gaodong/Desktop/claude_prompt/claude-dev-assistant';
@@ -113,7 +115,10 @@ export default function Home() {
             try {
               const data = JSON.parse(line.slice(6));
               
-              if (data.type === 'prompt') {
+              if (data.type === 'task_info') {
+                console.log('[前端] 收到任务信息');
+                setTaskInfo(data.data);
+              } else if (data.type === 'prompt') {
                 console.log('[前端] 收到 Prompt');
                 setStreamingPrompt(data.data);
               } else if (data.type === 'summarizing') {
@@ -217,11 +222,12 @@ export default function Home() {
         prompt={streamingPrompt}
         response={streamingResponse}
         isStreaming={isExecuting && (streamingPrompt || streamingResponse) ? true : false}
+        taskInfo={taskInfo}
       />
 
       {showSettings && (
-        <div className="fixed inset-0 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black/50 backdrop-blur-sm">
+          <div className="bg-white rounded-lg p-6 w-full max-w-md shadow-2xl">
             <h2 className="text-xl font-bold mb-4">设置</h2>
 
             <div className="mb-4">
@@ -238,21 +244,29 @@ export default function Home() {
                 />
                 <button
                   onClick={async () => {
+                    setIsSelectingFolder(true);
                     try {
                       const response = await fetch('/api/folder/select');
                       const data = await response.json();
                       if (data.path) {
                         setProjectPath(data.path);
+                      } else if (data.cancelled) {
+                        // 用户取消选择，不显示错误
+                        console.log('用户取消选择文件夹');
                       } else if (data.error) {
-                        console.log('选择文件夹:', data.error);
+                        alert(`选择文件夹失败: ${data.error}`);
                       }
                     } catch (error) {
                       console.error('选择文件夹失败:', error);
+                      alert('选择文件夹失败，请重试');
+                    } finally {
+                      setIsSelectingFolder(false);
                     }
                   }}
-                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 whitespace-nowrap"
+                  disabled={isSelectingFolder}
+                  className="px-4 py-2 bg-gray-600 text-white rounded-md hover:bg-gray-700 whitespace-nowrap disabled:bg-gray-400 disabled:cursor-wait transition-colors"
                 >
-                  📁 选择
+                  {isSelectingFolder ? '⏳ 打开中...' : '📁 选择'}
                 </button>
               </div>
               <p className="text-xs text-gray-500 mt-1">
@@ -289,14 +303,14 @@ export default function Home() {
                 取消
               </button>
               <button
-                onClick={() => {
+                onClick={async () => {
                   localStorage.setItem('projectPath', projectPath);
-                  loadProjectContext(projectPath);
                   setShowSettings(false);
+                  loadProjectContext(projectPath);
                 }}
-                className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700"
+                className="px-4 py-2 text-white bg-blue-600 rounded-md hover:bg-blue-700 transition-colors"
               >
-                保存并重新扫描
+                💾 保存
               </button>
             </div>
           </div>

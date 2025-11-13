@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<body>
+<canvas id="canvas16" width="16" height="16"></canvas>
+<canvas id="canvas48" width="48" height="48"></canvas>
+<canvas id="canvas128" width="128" height="128"></canvas>
+<script>
+function createIcon(size) {
+  const canvas = document.getElementById('canvas' + size);
+  const ctx = canvas.getContext('2d');
+  
+  ctx.fillStyle = '#3b82f6';
+  ctx.fillRect(0, 0, size, size);
+  
+  ctx.fillStyle = '#ffffff';
+  ctx.font = 'bold ' + (size * 0.6) + 'px Arial';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('C', size/2, size/2);
+  
+  const link = document.createElement('a');
+  link.download = 'icon' + size + '.png';
+  link.href = canvas.toDataURL();
+  link.click();
+}
+
+createIcon(16);
+createIcon(48);
+createIcon(128);
+</script>
+</body>
+</html>

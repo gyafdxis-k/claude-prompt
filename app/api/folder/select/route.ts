@@ -22,12 +22,13 @@ export async function GET() {
     
     return NextResponse.json({ path: folderPath });
   } catch (error: any) {
-    console.error('[Folder Selector] 选择失败:', error);
-    
-    if (error.message.includes('User canceled')) {
-      return NextResponse.json({ error: '用户取消选择' }, { status: 400 });
+    // 用户取消选择，返回 200 而不是错误
+    if (error.message.includes('User canceled') || error.message.includes('用户已取消') || error.code === 128) {
+      console.log('[Folder Selector] 用户取消选择');
+      return NextResponse.json({ cancelled: true }, { status: 200 });
     }
     
+    console.error('[Folder Selector] 选择失败:', error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

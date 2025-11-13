@@ -49,17 +49,17 @@ export class WorkflowEngine {
     let response = '';
     for await (const chunk of this.claude.streamMessage(prompt)) {
       response += chunk;
-      if (context.outputs.length > 0) {
-        context.outputs[context.outputs.length - 1].response = response;
-      }
     }
 
     const output: StepOutput = {
       stepId: step.id,
       stepName: step.name,
-      prompt,
-      response,
-      timestamp: Date.now()
+      conversations: [{
+        prompt,
+        response,
+        timestamp: Date.now()
+      }],
+      completed: false
     };
 
     return output;
@@ -208,68 +208,54 @@ export class WorkflowEngine {
       console.log(`  - ${o.stepName}: ${o.conversations.length} 轮对话`);
     });
 
-    const MAX_STEP_TOKENS = 15000;
+    const MAX_STEP_TOKENS = 8000; // 降低从 15000 到 8000
+    const MAX_TOTAL_HISTORY = 20000; // 总历史记录不超过 20000 字符
+    
     const allPreviousSteps = completedSteps
       .map(o => {
-        const allConversations = o.conversations
-          .map((conv, idx) => {
-            let text = `\n### 第 ${idx + 1} 轮对话\n`;
-            if (conv.userInput && conv.userInput.trim() && conv.userInput !== '[系统自动总结]') {
-              text += `**开发者**: ${conv.userInput}\n\n`;
-            }
-            text += `**Claude**: ${conv.response}\n`;
-            return text;
-          })
-          .join('\n---\n');
+        // 只保留最后一轮对话的摘要
+        const lastConv = o.conversations[o.conversations.length - 1];
+        const summary = `\n## ${o.stepName}\n${o.conversations.length > 1 ? `共 ${o.conversations.length} 轮对话，` : ''}最终输出:\n${lastConv.response.substring(0, 2000)}${lastConv.response.length > 2000 ? '...(已截断)' : ''}`;
         
-        const estimatedTokens = Math.ceil(allConversations.length / 4);
-        console.log(`  - ${o.stepName} tokens 估计: ${estimatedTokens}`);
-        
-        if (estimatedTokens > MAX_STEP_TOKENS) {
-          const lastConv = o.conversations[o.conversations.length - 1];
-          const summary = `\n### 总结\n该步骤共进行了 ${o.conversations.length} 轮对话。\n\n**最终结果**:\n${lastConv.response.substring(0, 3000)}${lastConv.response.length > 3000 ? '...\n\n[内容过长，已截断。如需完整内容，请查看对话历史]' : ''}`;
-          console.log(`  - ${o.stepName} 内容过长，使用摘要`);
-          return `\n## ${o.stepName}\n\n${summary}`;
-        }
-        
-        return `\n## ${o.stepName}\n\n${allConversations}`;
+        return summary;
       })
-      .join('\n\n========\n\n');
+      .join('\n\n');
+    
+    // 如果总历史太长，进一步截断
+    let finalPreviousSteps = allPreviousSteps;
+    if (allPreviousSteps.length > MAX_TOTAL_HISTORY) {
+      console.log(`[WorkflowEngine] 历史记录过长(${allPreviousSteps.length}字符)，截断到${MAX_TOTAL_HISTORY}字符`);
+      finalPreviousSteps = allPreviousSteps.substring(0, MAX_TOTAL_HISTORY) + '\n\n...(更早的历史已省略)';
+    }
 
-    if (allPreviousSteps) {
-      console.log(`[WorkflowEngine] 添加之前步骤的对话历史，长度: ${allPreviousSteps.length} 字符`);
-      rendered = `${rendered}\n\n# 之前步骤的完整对话记录\n以下是工作流中已完成步骤的所有对话，请基于这些上下文继续工作：\n${allPreviousSteps}`;
+    if (finalPreviousSteps) {
+      console.log(`[WorkflowEngine] 添加之前步骤的对话历史，长度: ${finalPreviousSteps.length} 字符`);
+      rendered = `${rendered}\n\n# 之前步骤摘要\n以下是已完成步骤的关键输出：\n${finalPreviousSteps}`;
     } else {
       console.log(`[WorkflowEngine] 没有之前步骤的对话历史`);
     }
 
     if (hasPreviousConversations) {
-      const allCurrentConversations = currentStepOutput!.conversations
+      // 只保留最近3轮对话
+      const recentConversations = currentStepOutput!.conversations.slice(-3);
+      const conversationHistory = recentConversations
         .map((conv, index) => {
-          let history = `\n### 第 ${index + 1} 轮对话\n`;
+          const actualIndex = currentStepOutput!.conversations.length - recentConversations.length + index;
+          let history = `\n### 第 ${actualIndex + 1} 轮\n`;
           if (conv.userInput && conv.userInput.trim()) {
-            history += `\n**开发者**:\n${conv.userInput}\n`;
+            history += `开发者: ${conv.userInput.substring(0, 500)}${conv.userInput.length > 500 ? '...' : ''}\n\n`;
           }
-          history += `\n**Claude 之前的回复**:\n${conv.response}\n`;
+          history += `Claude: ${conv.response.substring(0, 1500)}${conv.response.length > 1500 ? '...(已截断)' : ''}`;
           return history;
         })
         .join('\n---\n');
 
-      const currentConvTokens = Math.ceil(allCurrentConversations.length / 4);
-      console.log(`[WorkflowEngine] 当前步骤对话历史 tokens 估计: ${currentConvTokens}`);
+      console.log(`[WorkflowEngine] 当前步骤对话历史: 保留最近${recentConversations.length}轮，共${conversationHistory.length}字符`);
 
-      let conversationHistory = allCurrentConversations;
-      
-      if (currentConvTokens > MAX_STEP_TOKENS) {
-        const lastConv = currentStepOutput!.conversations[currentStepOutput!.conversations.length - 1];
-        conversationHistory = `\n### 总结\n本步骤已进行了 ${currentStepOutput!.conversations.length} 轮对话。\n\n**最近一轮的完整内容**:\n\n**开发者**: ${lastConv.userInput || '(无输入)'}\n\n**Claude**: ${lastConv.response.substring(0, 3000)}${lastConv.response.length > 3000 ? '...\n\n[对话内容过长，已截断。完整历史可在界面查看]' : ''}`;
-        console.log(`[WorkflowEngine] 当前步骤对话历史过长，使用摘要`);
-      }
-
-      rendered = `${rendered}\n\n# 对话历史\n以下是本步骤之前的对话记录，请基于这些上下文继续回答：\n${conversationHistory}`;
+      rendered = `${rendered}\n\n# 最近对话\n${currentStepOutput!.conversations.length > 3 ? `(共${currentStepOutput!.conversations.length}轮，仅显示最近3轮)\n` : ''}${conversationHistory}`;
 
       if (context.inputs.continuationInput && String(context.inputs.continuationInput).trim()) {
-        rendered += `\n\n---\n\n# 开发者的新要求\n${context.inputs.continuationInput}`;
+        rendered += `\n\n---\n\n# 新要求\n${context.inputs.continuationInput}`;
       }
     } else if (unusedInputs.length > 0 && !hasPlaceholders) {
       const inputsSection = unusedInputs

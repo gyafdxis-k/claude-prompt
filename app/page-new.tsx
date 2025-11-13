@@ -104,6 +104,8 @@ export default function Home() {
       <div className="flex-1 overflow-hidden">
         <WorkflowPage
           onExecuteStep={handleExecuteStep}
+          onSelectWorkflow={() => {}}
+          onCompleteStep={() => {}}
           context={context}
           isExecuting={isExecuting}
         />

@@ -2,12 +2,21 @@
 
 import { useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
+import ToolCallDisplay from './ToolCallDisplay';
+
+interface ToolCall {
+  tool: string;
+  params: Record<string, any>;
+  result?: any;
+  error?: string;
+}
 
 interface Message {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  toolCalls?: ToolCall[];
 }
 
 interface ChatPanelProps {
@@ -76,36 +85,41 @@ export default function ChatPanel({ messages, isStreaming }: ChatPanelProps) {
                   {message.content}
                 </pre>
               ) : (
-                <ReactMarkdown
-                  components={{
-                    code: ({ node, className, children, ...props }) => {
-                      const match = /language-(\w+)/.exec(className || '');
-                      const isInline = !match;
-                      
-                      return isInline ? (
-                        <code className="bg-gray-100 px-1 py-0.5 rounded text-sm" {...props}>
-                          {children}
-                        </code>
-                      ) : (
-                        <div className="relative">
-                          <pre className="bg-gray-900 text-gray-100 p-4 rounded-md overflow-x-auto">
-                            <code className={className} {...props}>
-                              {children}
-                            </code>
-                          </pre>
-                          <button
-                            onClick={() => copyToClipboard(String(children))}
-                            className="absolute top-2 right-2 px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded"
-                          >
-                            复制代码
-                          </button>
-                        </div>
-                      );
-                    }
-                  }}
-                >
-                  {message.content}
-                </ReactMarkdown>
+                <>
+                  {message.toolCalls && message.toolCalls.length > 0 && (
+                    <ToolCallDisplay toolCalls={message.toolCalls} />
+                  )}
+                  <ReactMarkdown
+                    components={{
+                      code: ({ node, className, children, ...props }) => {
+                        const match = /language-(\w+)/.exec(className || '');
+                        const isInline = !match;
+                        
+                        return isInline ? (
+                          <code className="bg-gray-100 px-1 py-0.5 rounded text-sm" {...props}>
+                            {children}
+                          </code>
+                        ) : (
+                          <div className="relative">
+                            <pre className="bg-gray-900 text-gray-100 p-4 rounded-md overflow-x-auto">
+                              <code className={className} {...props}>
+                                {children}
+                              </code>
+                            </pre>
+                            <button
+                              onClick={() => copyToClipboard(String(children))}
+                              className="absolute top-2 right-2 px-2 py-1 bg-gray-700 hover:bg-gray-600 text-white text-xs rounded"
+                            >
+                              复制代码
+                            </button>
+                          </div>
+                        );
+                      }
+                    }}
+                  >
+                    {message.content}
+                  </ReactMarkdown>
+                </>
               )}
             </div>
           </div>

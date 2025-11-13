@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { PromptTemplate } from '@/lib/prompts/prompt-scanner';
+import { PROMPT_CATEGORIES, getCategoriesByIds, CATEGORY_COLORS } from '@/lib/categories';
 
 interface PromptTemplateSelectorProps {
   onSelectTemplate: (template: PromptTemplate) => void;
@@ -11,8 +12,7 @@ interface PromptTemplateSelectorProps {
 export default function PromptTemplateSelector({ onSelectTemplate, selectedTemplate }: PromptTemplateSelectorProps) {
   const [prompts, setPrompts] = useState<PromptTemplate[]>([]);
   const [loading, setLoading] = useState(true);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
@@ -27,9 +27,6 @@ export default function PromptTemplateSelector({ onSelectTemplate, selectedTempl
       
       if (data.prompts) {
         setPrompts(data.prompts);
-        
-        const uniqueCategories = Array.from(new Set(data.prompts.map((p: PromptTemplate) => p.category)));
-        setCategories(['all', ...uniqueCategories]);
       }
     } catch (error) {
       console.error('加载 prompt 模板失败:', error);
@@ -38,8 +35,17 @@ export default function PromptTemplateSelector({ onSelectTemplate, selectedTempl
     }
   };
 
+  const toggleCategory = (categoryId: string) => {
+    setSelectedCategories(prev => 
+      prev.includes(categoryId)
+        ? prev.filter(id => id !== categoryId)
+        : [...prev, categoryId]
+    );
+  };
+
   const filteredPrompts = prompts.filter(p => {
-    const matchesCategory = selectedCategory === 'all' || p.category === selectedCategory;
+    const matchesCategory = selectedCategories.length === 0 || 
+      (p.categories && p.categories.some(cat => selectedCategories.includes(cat)));
     const matchesSearch = !searchQuery || 
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.description.toLowerCase().includes(searchQuery.toLowerCase());
@@ -68,20 +74,39 @@ export default function PromptTemplateSelector({ onSelectTemplate, selectedTempl
           />
         </div>
 
-        <div className="flex gap-2 overflow-x-auto pb-2">
-          {categories.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={`px-3 py-1 rounded-full text-sm whitespace-nowrap ${
-                selectedCategory === cat
-                  ? 'bg-blue-600 text-white'
-                  : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
-              }`}
-            >
-              {cat === 'all' ? '全部' : cat}
-            </button>
-          ))}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700">分类筛选</span>
+            {selectedCategories.length > 0 && (
+              <button
+                onClick={() => setSelectedCategories([])}
+                className="text-xs text-blue-600 hover:text-blue-800"
+              >
+                清除筛选
+              </button>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {PROMPT_CATEGORIES.map(cat => {
+              const isSelected = selectedCategories.includes(cat.id);
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => toggleCategory(cat.id)}
+                  data-testid={`category-filter-${cat.id}`}
+                  className={`px-2 py-1 rounded-md text-xs font-medium border transition-all ${
+                    isSelected
+                      ? `${CATEGORY_COLORS[cat.color]} border-current`
+                      : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300'
+                  }`}
+                  title={cat.description}
+                >
+                  <span className="mr-1">{cat.icon}</span>
+                  {cat.name}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
         <div className="text-sm text-gray-600">
@@ -100,11 +125,20 @@ export default function PromptTemplateSelector({ onSelectTemplate, selectedTempl
                 : 'border-gray-200 hover:border-blue-300 hover:shadow'
             }`}
           >
-            <div className="flex items-start justify-between mb-2">
-              <h3 className="font-bold text-gray-800">{prompt.name}</h3>
-              <span className="text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
-                {prompt.category}
-              </span>
+            <div className="mb-2">
+              <h3 className="font-bold text-gray-800 mb-1">{prompt.name}</h3>
+              {prompt.categories && prompt.categories.length > 0 && (
+                <div className="flex flex-wrap gap-1">
+                  {getCategoriesByIds(prompt.categories).map(cat => (
+                    <span
+                      key={cat.id}
+                      className={`text-xs px-2 py-0.5 rounded border ${CATEGORY_COLORS[cat.color]}`}
+                    >
+                      {cat.icon} {cat.name}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             
             <p className="text-sm text-gray-600 mb-2 line-clamp-2">
