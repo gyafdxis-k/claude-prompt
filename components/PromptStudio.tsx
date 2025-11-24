@@ -11,6 +11,12 @@ export default function PromptStudio() {
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null);
   const [parameters, setParameters] = useState<Record<string, any>>({});
   const [renderedPrompt, setRenderedPrompt] = useState('');
+  const [projectPath, setProjectPath] = useState('');
+
+  useEffect(() => {
+    const savedPath = localStorage.getItem('projectPath') || '';
+    setProjectPath(savedPath);
+  }, []);
   
   const [isExecuting, setIsExecuting] = useState(false);
   const [streamingPrompt, setStreamingPrompt] = useState('');
@@ -21,7 +27,7 @@ export default function PromptStudio() {
     if (selectedTemplate) {
       renderPrompt();
     }
-  }, [selectedTemplate, parameters]);
+  }, [selectedTemplate, parameters, projectPath]);
 
   const renderPrompt = () => {
     if (!selectedTemplate) return;
@@ -41,8 +47,8 @@ export default function PromptStudio() {
       }
     }
 
-    rendered = rendered.replace(/\$\{cwd\}/g, '/Users/gaodong/Desktop/claude_prompt/claude-dev-assistant');
-    rendered = rendered.replace(/{{cwd}}/g, '/Users/gaodong/Desktop/claude_prompt/claude-dev-assistant');
+    rendered = rendered.replace(/\$\{cwd\}/g, projectPath);
+    rendered = rendered.replace(/{{cwd}}/g, projectPath);
 
     setRenderedPrompt(rendered);
   };
@@ -76,7 +82,7 @@ export default function PromptStudio() {
             prompt: renderedPrompt
           },
           inputs: parameters,
-          projectPath: '/Users/gaodong/Desktop/claude_prompt/claude-dev-assistant',
+          projectPath: projectPath,
           previousOutputs: []
         })
       });

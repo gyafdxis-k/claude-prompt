@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { workflows, Workflow, WorkflowStep } from '@/lib/workflows/workflow-templates';
+import { workflows, Workflow, WorkflowStep, workflowCategories, getWorkflowsByCategory, duplicateWorkflow } from '@/lib/workflows/workflow-templates';
 import { WorkflowExecutionContext, StepOutput } from '@/lib/workflows/workflow-engine';
 import { PromptTemplate } from '@/lib/prompts/prompt-scanner';
 import PromptTemplateModal from './PromptTemplateModal';
@@ -9,6 +9,11 @@ import MarkdownRenderer from './MarkdownRenderer';
 import WorkflowEditor from './WorkflowEditor';
 import PromptTemplateCreator from './PromptTemplateCreator';
 import ToolCallDisplay from './ToolCallDisplay';
+import CopyButton from './CopyButton';
+import WorkflowProgress from './WorkflowProgress';
+import PromptEditorModal from './PromptEditorModal';
+import TemplateBindingCard from './TemplateBindingCard';
+import { TemplateBinding, renderTemplate } from '@/lib/template-binding';
 
 interface WorkflowPageProps {
   onExecuteStep: (step: WorkflowStep, inputs: Record<string, any>) => Promise<void>;
@@ -25,6 +30,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
   const [showPromptPreview, setShowPromptPreview] = useState(false);
   const [isOutputCollapsed, setIsOutputCollapsed] = useState(false);
   const [userInput, setUserInput] = useState('');
+  const [templateBinding, setTemplateBinding] = useState<TemplateBinding | null>(null);
   const [selectedConversationIndex, setSelectedConversationIndex] = useState<number>(0);
   const [showOldConversations, setShowOldConversations] = useState(false);
   const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
@@ -56,6 +62,12 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
   const [editingStepIndex, setEditingStepIndex] = useState<number | null>(null);
   const [editingStepName, setEditingStepName] = useState('');
   const [fullPromptPreview, setFullPromptPreview] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [showWorkflowPreview, setShowWorkflowPreview] = useState(false);
+  const [previewWorkflow, setPreviewWorkflow] = useState<Workflow | null>(null);
+  const [isTestMode, setIsTestMode] = useState(false);
+  const [showPromptEditor, setShowPromptEditor] = useState(false);
+  const [editingPrompt, setEditingPrompt] = useState('');
 
   useEffect(() => {
     if (context && context.outputs.length > 0) {
@@ -123,13 +135,24 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
     if (!selectedWorkflow || !context) return;
     
     const step = stepToExecute || customStep || workflowSteps[currentStepIndex];
+    
+    let finalUserInput = userInput;
+    if (templateBinding) {
+      const renderedTemplate = renderTemplate(templateBinding, {
+        project_path: context?.projectPath || '',
+        cwd: context?.projectPath || ''
+      });
+      finalUserInput = renderedTemplate + (userInput ? '\n\n' + userInput : '');
+    }
+    
     const allInputs = { 
       ...inputs, 
-      requirement: userInput,
-      continuationInput: userInput 
+      requirement: finalUserInput,
+      continuationInput: finalUserInput 
     };
     await onExecuteStep(step, allInputs);
     setUserInput('');
+    setTemplateBinding(null);
     setCustomStep(null);
     setCustomPrompt('');
   };
@@ -161,11 +184,29 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
     }
   }, [context?.outputs, currentStepIndex, currentOutput]);
 
+  const displayedWorkflows = useMemo(() => {
+    return selectedCategory === 'all' ? allWorkflows : allWorkflows.filter(w => w.category === selectedCategory);
+  }, [allWorkflows, selectedCategory]);
+
+  const handleDuplicateWorkflow = async (workflow: Workflow) => {
+    const duplicated = duplicateWorkflow(workflow);
+    try {
+      await fetch('/api/workflows/custom', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(duplicated)
+      });
+      await loadCustomWorkflows();
+    } catch (error) {
+      console.error('复制工作流失败:', error);
+    }
+  };
+
   return (
     <div className="flex h-full">
       <div className="w-64 border-r border-gray-200 bg-gray-50 overflow-y-auto">
         <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center justify-between mb-3">
             <h2 className="font-bold text-lg">工作流</h2>
             <button
               onClick={() => setShowWorkflowEditor(true)}
@@ -175,48 +216,109 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
               ➕
             </button>
           </div>
+          <div className="flex flex-wrap gap-1">
+            {workflowCategories.map((cat) => (
+              <button
+                key={cat.id}
+                onClick={() => setSelectedCategory(cat.id)}
+                className={`px-2 py-1 text-xs rounded transition-colors ${
+                  selectedCategory === cat.id
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                }`}
+                title={cat.description}
+              >
+                {cat.icon} {cat.name}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="p-2">
-          {allWorkflows.map((workflow) => (
-            <button
-              key={workflow.id}
-              onClick={() => {
-                setSelectedWorkflow(workflow);
-                setWorkflowSteps([...workflow.steps]);
-                setCurrentStepIndex(0);
-                setInputs({});
-                onSelectWorkflow(workflow);
-              }}
-              className={`w-full text-left p-3 rounded-md mb-2 transition-colors ${
-                selectedWorkflow?.id === workflow.id
-                  ? 'bg-blue-100 text-blue-800'
-                  : 'hover:bg-gray-100'
-              }`}
-            >
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xl">{workflow.icon}</span>
-                <span className="font-medium text-sm">{workflow.name}</span>
+          {displayedWorkflows.map((workflow) => (
+            <div key={workflow.id} className="relative group mb-2">
+              <button
+                onClick={() => {
+                  setSelectedWorkflow(workflow);
+                  setWorkflowSteps([...workflow.steps]);
+                  setCurrentStepIndex(0);
+                  setInputs({});
+                  onSelectWorkflow(workflow, isTestMode);
+                }}
+                className={`w-full text-left p-3 rounded-md transition-colors ${
+                  selectedWorkflow?.id === workflow.id
+                    ? 'bg-blue-100 text-blue-800'
+                    : 'hover:bg-gray-100'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xl">{workflow.icon}</span>
+                  <span className="font-medium text-sm">{workflow.name}</span>
+                </div>
+                <p className="text-xs text-gray-600">{workflow.description}</p>
+              </button>
+              <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setPreviewWorkflow(workflow);
+                    setShowWorkflowPreview(true);
+                  }}
+                  className="px-2 py-1 text-xs bg-purple-600 text-white rounded hover:bg-purple-700"
+                  title="预览工作流"
+                >
+                  👁️
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDuplicateWorkflow(workflow);
+                  }}
+                  className="px-2 py-1 text-xs bg-green-600 text-white rounded hover:bg-green-700"
+                  title="复制工作流"
+                >
+                  📋
+                </button>
               </div>
-              <p className="text-xs text-gray-600">{workflow.description}</p>
-            </button>
+            </div>
           ))}
         </div>
       </div>
 
       {selectedWorkflow ? (
         <div className="flex-1 flex flex-col">
-          <div className="p-4 border-b border-gray-200 bg-white">
+          <div className="p-3 border-b border-gray-200 bg-white">
             <div className="flex items-center justify-between">
-              <div>
-                <h1 className="text-xl font-bold flex items-center gap-2">
-                  <span>{selectedWorkflow.icon}</span>
-                  <span>{selectedWorkflow.name}</span>
-                </h1>
-                <p className="text-sm text-gray-600 mt-1">{selectedWorkflow.description}</p>
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{selectedWorkflow.icon}</span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-lg font-bold">{selectedWorkflow.name}</h1>
+                    {isTestMode && (
+                      <span className="px-2 py-0.5 text-xs bg-orange-100 text-orange-700 rounded-full border border-orange-300">
+                        🧪 测试
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-0.5 line-clamp-1" title={selectedWorkflow.description}>
+                    {selectedWorkflow.description}
+                  </p>
+                </div>
               </div>
+              <button
+                onClick={() => setIsTestMode(!isTestMode)}
+                className={`px-3 py-1.5 text-xs rounded-lg transition-all ${
+                  isTestMode
+                    ? 'bg-orange-100 text-orange-700 border border-orange-300 hover:bg-orange-200'
+                    : 'bg-gray-100 text-gray-700 border border-gray-300 hover:bg-gray-200'
+                }`}
+                title={isTestMode ? '退出测试模式（执行将保存到历史）' : '进入测试模式（执行不保存历史）'}
+              >
+                {isTestMode ? '🧪 测试中' : '🧪 测试'}
+              </button>
             </div>
 
-            <div className="mt-4 flex items-center gap-2 flex-wrap">
+
+            <div className="mt-2 flex items-center gap-2 flex-wrap">
               {workflowSteps.map((step, index) => (
                 <div key={step.id} className="flex items-center">
                   <div className="relative group">
@@ -263,16 +365,25 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                             setUserInput('');
                           }
                         }}
-                        className={`px-3 py-1 rounded-full text-sm cursor-pointer transition-all ${
+                        className={`px-3 py-1.5 rounded-lg text-xs cursor-pointer transition-all flex items-center gap-1.5 ${
                           index < currentStepIndex
                             ? 'bg-green-100 text-green-800 hover:bg-green-200'
                             : index === currentStepIndex
-                            ? 'bg-blue-100 text-blue-800 font-medium hover:bg-blue-200'
+                            ? 'bg-blue-500 text-white font-medium hover:bg-blue-600 shadow-sm'
                             : 'bg-gray-100 text-gray-500 cursor-not-allowed'
                         }`}
                         title="双击编辑名称"
                       >
-                        {index + 1}. {step.name.replace(/^\d+\.\s*/, '')}
+                        <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
+                          index < currentStepIndex
+                            ? 'bg-green-600 text-white'
+                            : index === currentStepIndex
+                            ? 'bg-white text-blue-500'
+                            : 'bg-gray-300 text-gray-600'
+                        }`}>
+                          {index < currentStepIndex ? '✓' : index + 1}
+                        </span>
+                        <span>{step.name.replace(/^\d+\.\s*/, '')}</span>
                       </div>
                     )}
                     <button
@@ -302,8 +413,8 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                     </button>
                   </div>
                   {index < workflowSteps.length - 1 && (
-                    <div className="relative group mx-1">
-                      <div className="w-8 h-0.5 bg-gray-300" />
+                    <div className="relative group mx-2">
+                      <div className="w-12 h-0.5 bg-gray-300" />
                       <button
                         onClick={() => {
                           const newStep: WorkflowStep = {
@@ -338,10 +449,10 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                   };
                   setWorkflowSteps([...workflowSteps, newStep]);
                 }}
-                className="px-3 py-1 rounded-full text-sm bg-purple-100 text-purple-700 hover:bg-purple-200 cursor-pointer"
+                className="px-3 py-1.5 rounded-lg text-xs bg-purple-100 text-purple-700 hover:bg-purple-200 cursor-pointer transition-colors"
                 title="添加新步骤"
               >
-                + 添加步骤
+                + 步骤
               </button>
             </div>
           </div>
@@ -351,27 +462,75 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
               <div className="flex-1 overflow-y-auto p-6">
                 {currentStep && (
                   <div>
-                    <h2 className="text-lg font-bold mb-4">{currentStep.name}</h2>
+                    <div className="flex items-center justify-between mb-4">
+                      <h2 className="text-lg font-bold">{currentStep.name}</h2>
+                      <button
+                        onClick={() => {
+                          setEditingPrompt(workflowSteps[currentStepIndex]?.prompt || '');
+                          setShowPromptEditor(true);
+                        }}
+                        className="px-3 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200 transition-colors"
+                        title="编辑此步骤的 Prompt 模板"
+                      >
+                        ✏️ 编辑 Prompt
+                      </button>
+                    </div>
 
                     {!currentOutput && (
-                      <div className="space-y-4 mb-6">
-                        <div>
-                          <label className="block text-sm font-medium mb-1">
-                            💬 对话输入
-                          </label>
-                          <textarea
-                            value={userInput}
-                            onChange={(e) => setUserInput(e.target.value)}
-                            rows={8}
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-sm"
-                            placeholder="输入你的要求、问题或描述...\n\n你可以：\n1. 直接输入文字\n2. 点击右侧'选择 Prompt'按钮使用模板\n3. 使用模板后可以继续编辑"
-                          />
-                        </div>
+                      <div className="space-y-3 mb-4">
+                        {/* 模板绑定卡片或自由文本输入 */}
+                        {templateBinding ? (
+                          <div>
+                            <label className="block text-xs font-medium mb-2 text-gray-700">
+                              💬 基于模板的输入
+                            </label>
+                            <TemplateBindingCard
+                              binding={templateBinding}
+                              onParameterChange={(paramName, value) => {
+                                setTemplateBinding({
+                                  ...templateBinding,
+                                  parameters: {
+                                    ...templateBinding.parameters,
+                                    [paramName]: value
+                                  }
+                                });
+                              }}
+                              onRemove={() => {
+                                setTemplateBinding(null);
+                                setUserInput('');
+                              }}
+                              onChangeTemplate={() => {
+                                setShowTemplateModal(true);
+                              }}
+                              additionalContext={{
+                                project_path: context?.projectPath || '',
+                                cwd: context?.projectPath || ''
+                              }}
+                              showPreview={true}
+                            />
+                          </div>
+                        ) : (
+                          <div>
+                            <label className="block text-xs font-medium mb-1 text-gray-700">
+                              💬 对话输入
+                            </label>
+                            <textarea
+                              value={userInput}
+                              onChange={(e) => setUserInput(e.target.value)}
+                              rows={5}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="输入你的要求、问题或描述...（可点击右侧'选择 Prompt'使用模板）"
+                            />
+                            <div className="mt-2 text-xs text-gray-500 flex items-center gap-2">
+                              <span>💡 提示：点击右侧"选择 Prompt"按钮使用结构化模板，参数可随时编辑</span>
+                            </div>
+                          </div>
+                        )}
 
                         {currentStepIndex === 0 && (
                           <div>
-                            <label className="block text-sm font-medium mb-1">
-                              相关文件（可选）
+                            <label className="block text-xs font-medium mb-1 text-gray-700">
+                              📁 相关文件（可选）
                             </label>
                             <textarea
                               value={inputs.relatedFilesInput || ''}
@@ -384,9 +543,9 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                                   relatedFiles: files 
                                 });
                               }}
-                              rows={4}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-sm"
-                              placeholder="每行一个文件路径，例如:&#10;app/page.tsx&#10;lib/utils.ts"
+                              rows={3}
+                              className="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                              placeholder="每行一个文件路径，例如: app/page.tsx"
                             />
                           </div>
                         )}
@@ -394,9 +553,9 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                     )}
 
                     {currentOutput && currentOutput.conversations.length > 0 && (
-                      <div className="mb-6 space-y-4">
+                      <div className="mb-4 space-y-3">
                         <div className="flex items-center gap-2 mb-2">
-                          <h3 className="font-medium text-gray-700">对话历史 ({currentOutput.conversations.length} 轮)</h3>
+                          <h3 className="text-sm font-medium text-gray-700">对话历史 ({currentOutput.conversations.length} 轮)</h3>
                           {currentOutput.completed && (
                             <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">✓ 已完成</span>
                           )}
@@ -419,22 +578,25 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                             <div key={actualIndex} className="space-y-3">
                               {conv.userInput && conv.userInput.trim() && (
                                 <div className="flex gap-3">
-                                  <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-white shadow-sm">
+                                  <div className="flex-shrink-0 w-7 h-7 bg-gradient-to-br from-blue-500 to-cyan-500 rounded-full flex items-center justify-center text-sm shadow-sm">
                                     👤
                                   </div>
-                                  <div className="flex-1 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg p-4 max-w-full overflow-hidden border border-blue-100">
+                                  <div className="flex-1 bg-gradient-to-br from-blue-50 to-cyan-50 rounded-lg p-3 max-w-full overflow-hidden border border-blue-100">
                                     <div className="flex items-center justify-between mb-2">
                                       <div className="text-xs text-gray-400 font-medium">
                                         第 {actualIndex + 1} 轮 · {new Date(conv.timestamp).toLocaleTimeString('zh-CN')}
                                       </div>
-                                      {shouldShowExpandButton(conv.userInput) && (
-                                        <button
-                                          onClick={() => toggleMessageExpanded(`user-${actualIndex}`)}
-                                          className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 hover:bg-white/50 rounded transition-colors"
-                                        >
-                                          {expandedMessages.has(`user-${actualIndex}`) ? '收起' : '展开'}
-                                        </button>
-                                      )}
+                                      <div className="flex gap-2">
+                                        <CopyButton text={conv.userInput} label="复制" size="sm" />
+                                        {shouldShowExpandButton(conv.userInput) && (
+                                          <button
+                                            onClick={() => toggleMessageExpanded(`user-${actualIndex}`)}
+                                            className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 hover:bg-white/50 rounded transition-colors"
+                                          >
+                                            {expandedMessages.has(`user-${actualIndex}`) ? '收起' : '展开'}
+                                          </button>
+                                        )}
+                                      </div>
                                     </div>
                                     <div className={`text-sm text-gray-700 whitespace-pre-wrap ${
                                       expandedMessages.has(`user-${actualIndex}`) ? '' : 'line-clamp-3'
@@ -446,15 +608,25 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                               )}
                               
                               <div className="flex gap-3">
-                                <div className="flex-shrink-0 w-8 h-8 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-white shadow-sm">
+                                <div className="flex-shrink-0 w-7 h-7 bg-gradient-to-br from-purple-500 to-pink-500 rounded-full flex items-center justify-center text-sm shadow-sm">
                                   🤖
                                 </div>
-                                <div className="flex-1 bg-white rounded-lg p-5 shadow-sm border border-gray-100 max-w-full overflow-hidden">
+                                <div className="flex-1 bg-white rounded-lg p-3 shadow-sm border border-gray-100 max-w-full overflow-hidden">
                                   <div className="flex items-center justify-between mb-4">
                                     <div className="text-xs text-gray-400 font-medium">
                                       第 {actualIndex + 1} 轮 · {new Date(conv.timestamp).toLocaleTimeString('zh-CN')}
                                     </div>
                                     <div className="flex gap-2">
+                                      <CopyButton 
+                                        text={conv.response} 
+                                        label="回复" 
+                                        size="sm" 
+                                      />
+                                      <CopyButton 
+                                        text={`**用户**: ${conv.userInput || '(继续对话)'}\n\n**Claude**: ${conv.response}`} 
+                                        label="完整对话" 
+                                        size="sm" 
+                                      />
                                       {shouldShowExpandButton(conv.response) && (
                                         <button
                                           onClick={() => toggleMessageExpanded(`claude-${actualIndex}`)}
@@ -463,12 +635,6 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                                           {expandedMessages.has(`claude-${actualIndex}`) ? '收起' : '展开'}
                                         </button>
                                       )}
-                                      <button
-                                        onClick={() => navigator.clipboard.writeText(conv.response)}
-                                        className="text-xs text-gray-400 hover:text-gray-700 px-2 py-1 hover:bg-gray-50 rounded transition-colors"
-                                      >
-                                        📋
-                                      </button>
                                     </div>
                                   </div>
                                   {expandedMessages.has(`claude-${actualIndex}`) && (conv as any).toolCalls && (conv as any).toolCalls.length > 0 && (
@@ -486,33 +652,67 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                         </div>
                         
                         {!currentOutput.completed && (
-                          <div className="flex gap-3 mt-4">
-                            <div className="flex-shrink-0 w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-bold text-sm">
-                              👤
-                            </div>
-                            <div className="flex-1 bg-yellow-50 border-2 border-yellow-300 rounded-lg p-4 max-w-full overflow-hidden">
-                              <label className="block text-sm font-medium mb-2 text-gray-700">
-                                💬 继续对话
-                              </label>
-                              <textarea
-                                value={userInput}
-                                onChange={(e) => setUserInput(e.target.value)}
-                                rows={6}
-                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-                                placeholder="输入补充要求或修改建议，Claude 会基于之前的对话继续回答...\n\n你也可以点击右侧'选择 Prompt'按钮使用模板"
-                              />
-                            </div>
+                          <div className="space-y-3 mt-3">
+                            {templateBinding ? (
+                              <div>
+                                <label className="block text-xs font-medium mb-2 text-gray-700">
+                                  💬 基于模板的输入
+                                </label>
+                                <TemplateBindingCard
+                                  binding={templateBinding}
+                                  onParameterChange={(paramName, value) => {
+                                    setTemplateBinding({
+                                      ...templateBinding,
+                                      parameters: {
+                                        ...templateBinding.parameters,
+                                        [paramName]: value
+                                      }
+                                    });
+                                  }}
+                                  onRemove={() => {
+                                    setTemplateBinding(null);
+                                    setUserInput('');
+                                  }}
+                                  onChangeTemplate={() => {
+                                    setShowTemplateModal(true);
+                                  }}
+                                  additionalContext={{
+                                    project_path: context?.projectPath || '',
+                                    cwd: context?.projectPath || ''
+                                  }}
+                                  showPreview={true}
+                                />
+                              </div>
+                            ) : (
+                              <div className="flex gap-3">
+                                <div className="flex-shrink-0 w-7 h-7 bg-blue-600 rounded-full flex items-center justify-center text-sm">
+                                  👤
+                                </div>
+                                <div className="flex-1 bg-yellow-50 border border-yellow-300 rounded-lg p-3 max-w-full overflow-hidden">
+                                  <label className="block text-xs font-medium mb-1 text-gray-700">
+                                    💬 继续对话
+                                  </label>
+                                  <textarea
+                                    value={userInput}
+                                    onChange={(e) => setUserInput(e.target.value)}
+                                    rows={3}
+                                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm"
+                                    placeholder="输入补充要求或修改建议，Claude 会基于之前的对话继续回答...\n\n你也可以点击右侧'选择 Prompt'按钮使用模板"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
                     )}
 
-                    <div className="flex gap-3 flex-wrap">
+                    <div className="flex gap-2 flex-wrap">
                       {!currentOutput && (
                         <button
                           onClick={() => handleExecuteStep()}
                           disabled={isExecuting}
-                          className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-wait transition-all"
+                          className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-wait transition-all"
                         >
                           {isExecuting ? '⏳ 执行中...' : '🚀 开始此步骤'}
                         </button>
@@ -523,14 +723,14 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                           <button
                             onClick={() => handleExecuteStep()}
                             disabled={isExecuting}
-                            className="px-6 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-wait transition-all"
+                            className="px-4 py-2 text-sm bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-wait transition-all"
                           >
                             {isExecuting ? '⏳ 执行中...' : '💬 继续对话'}
                           </button>
                           <button
                             onClick={handleCompleteStep}
                             disabled={isExecuting || currentOutput.conversations.length === 0}
-                            className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
+                            className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-400"
                           >
                             ✅ 完成此步骤
                           </button>
@@ -546,7 +746,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                             setUserInput('');
                             setSelectedConversationIndex(0);
                           }}
-                          className="px-6 py-2 bg-green-600 text-white rounded-md hover:bg-green-700"
+                          className="px-4 py-2 text-sm bg-green-600 text-white rounded-md hover:bg-green-700"
                         >
                           下一步 →
                         </button>
@@ -558,7 +758,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                             setCurrentStepIndex(currentStepIndex - 1);
                             setSelectedConversationIndex(0);
                           }}
-                          className="px-6 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
+                          className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300"
                         >
                           ← 上一步
                         </button>
@@ -566,7 +766,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
 
                       <button
                         onClick={() => setShowPromptPreview(!showPromptPreview)}
-                        className="px-6 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
+                        className="px-4 py-2 text-sm bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200"
                       >
                         {showPromptPreview ? '隐藏' : '显示'} Prompt
                       </button>
@@ -577,7 +777,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                             setSelectedOutputIndex(currentStepIndex);
                             setShowContextModal(true);
                           }}
-                          className="px-6 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700"
+                          className="px-4 py-2 text-sm bg-purple-600 text-white rounded-md hover:bg-purple-700"
                         >
                           🧠 查看上下文
                         </button>
@@ -590,7 +790,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
 
             {showPromptPreview && currentStep && (
               <div className="w-1/2 border-l border-gray-200 overflow-y-auto p-6 bg-gray-50">
-                <h3 className="font-bold mb-2 flex items-center justify-between">
+                <h3 className="font-bold mb-4 flex items-center justify-between">
                   <span>Prompt 预览 {customStep && <span className="text-xs text-purple-600 ml-2">(使用自定义模板)</span>}</span>
                   <div className="flex gap-2">
                     <button
@@ -626,6 +826,61 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                     </button>
                   </div>
                 </h3>
+                {(() => {
+                  const promptContent = currentStep.prompt;
+                  const variables = [
+                    ...promptContent.matchAll(/\{\{(\w+)\}\}/g),
+                    ...promptContent.matchAll(/\$\{(\w+)\}/g),
+                    ...promptContent.matchAll(/<(\w+)>/g),
+                    ...promptContent.matchAll(/\[(\w+)\]/g)
+                  ].map(match => match[1]);
+                  const uniqueVars = [...new Set(variables)];
+                  
+                  return uniqueVars.length > 0 && (
+                    <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                      <h4 className="font-semibold text-xs text-blue-900 mb-2">📊 变量依赖关系</h4>
+                      <div className="space-y-1">
+                        {uniqueVars.map((varName) => {
+                          let source = '未知来源';
+                          let icon = '❓';
+                          let color = 'text-gray-600';
+                          
+                          if (varName === 'previous_output' || varName === 'previousOutput') {
+                            if (currentStepIndex > 0) {
+                              source = `来自「${workflowSteps[currentStepIndex - 1]?.name || '上一步'}」`;
+                              icon = '⬅️';
+                              color = 'text-green-700';
+                            } else {
+                              source = '(当前是第一步，无前序输出)';
+                              icon = '⚠️';
+                              color = 'text-orange-600';
+                            }
+                          } else if (varName === 'project_path' || varName === 'cwd' || varName === 'projectPath') {
+                            source = '来自项目设置';
+                            icon = '📁';
+                            color = 'text-blue-700';
+                          } else if (varName === 'requirement') {
+                            source = '来自用户输入';
+                            icon = '✏️';
+                            color = 'text-purple-700';
+                          } else {
+                            source = '执行时输入';
+                            icon = '💬';
+                            color = 'text-gray-700';
+                          }
+                          
+                          return (
+                            <div key={varName} className={`text-xs ${color} flex items-start gap-2`}>
+                              <span>{icon}</span>
+                              <span className="font-mono bg-white px-1 rounded">{varName}</span>
+                              <span>← {source}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
                 <pre className="text-sm whitespace-pre-wrap font-mono bg-white p-4 rounded border border-gray-300 max-h-[600px] overflow-y-auto">
                   {fullPromptPreview || '加载中...'}
                 </pre>
@@ -646,38 +901,21 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
         isOpen={showTemplateModal}
         onClose={() => setShowTemplateModal(false)}
         onSelectTemplate={(template: PromptTemplate, parameters: Record<string, any>, additionalText: string) => {
-          let rendered = template.content;
-
-          for (const [key, value] of Object.entries(parameters)) {
-            const patterns = [
-              new RegExp(`\\$\\{${key}\\}`, 'g'),
-              new RegExp(`\\{\\{${key}\\}\\}`, 'g'),
-              new RegExp(`<${key}>`, 'g'),
-              new RegExp(`\\[${key}\\]`, 'g')
-            ];
-
-            for (const pattern of patterns) {
-              rendered = rendered.replace(pattern, String(value || ''));
-            }
-          }
-
-          rendered = rendered.replace(/\$\{cwd\}/g, context?.projectPath || '');
-          rendered = rendered.replace(/\{\{cwd\}\}/g, context?.projectPath || '');
-
+          // 创建模板绑定对象
+          const binding: TemplateBinding = {
+            id: `binding-${Date.now()}`,
+            template,
+            parameters,
+            createdAt: Date.now()
+          };
+          
+          setTemplateBinding(binding);
+          
+          // 如果有额外文本，附加到用户输入
           if (additionalText) {
-            rendered += '\n\n---\n\n' + additionalText;
-          }
-
-          setUserInput(rendered);
-          setCustomPrompt(rendered);
-
-          if (selectedWorkflow) {
-            const originalStep = workflowSteps[currentStepIndex];
-            const modifiedStep: WorkflowStep = {
-              ...originalStep,
-              prompt: rendered
-            };
-            setCustomStep(modifiedStep);
+            setUserInput(additionalText);
+          } else {
+            setUserInput('');
           }
         }}
         currentPrompt={currentStep?.prompt}
@@ -792,6 +1030,24 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
             alert('保存失败');
           }
         }}
+        onSaveAndUse={async (workflow) => {
+          try {
+            await fetch('/api/workflows/custom', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(workflow)
+            });
+            await loadCustomWorkflows();
+            setSelectedWorkflow(workflow);
+            setWorkflowSteps([...workflow.steps]);
+            setCurrentStepIndex(0);
+            setInputs({});
+            onSelectWorkflow(workflow, isTestMode);
+            setShowWorkflowEditor(false);
+          } catch (error) {
+            alert('保存失败');
+          }
+        }}
       />
 
       <PromptTemplateCreator
@@ -800,6 +1056,146 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
         onSave={() => {
           alert('模板已保存到 prompts/Custom 文件夹');
           setShowPromptCreator(false);
+        }}
+      />
+
+      {showWorkflowPreview && previewWorkflow && (
+        <div className="fixed inset-0 flex items-center justify-center z-50 bg-black bg-opacity-50 p-4">
+          <div className="bg-white rounded-lg w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div className="flex items-center gap-3">
+                <span className="text-3xl">{previewWorkflow.icon}</span>
+                <div>
+                  <h2 className="text-xl font-bold">{previewWorkflow.name}</h2>
+                  <p className="text-sm text-gray-600">{previewWorkflow.description}</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setShowWorkflowPreview(false);
+                  setPreviewWorkflow(null);
+                }}
+                className="text-gray-500 hover:text-gray-700 text-2xl"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="mb-4">
+                <h3 className="font-bold text-lg mb-2">工作流步骤 ({previewWorkflow.steps.length} 步)</h3>
+                <div className="space-y-4">
+                  {previewWorkflow.steps.map((step, index) => (
+                    <div key={step.id} className="border rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm">
+                          {index + 1}
+                        </span>
+                        <h4 className="font-bold text-md">{step.name}</h4>
+                        {step.requiresApproval && (
+                          <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded">需确认</span>
+                        )}
+                      </div>
+                      <div className="bg-white border rounded p-3">
+                        <h5 className="text-xs font-semibold text-gray-600 mb-2">Prompt 模板：</h5>
+                        <pre className="text-xs whitespace-pre-wrap font-mono text-gray-700 max-h-48 overflow-y-auto">
+                          {step.prompt}
+                        </pre>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {previewWorkflow.config && Object.keys(previewWorkflow.config).length > 0 && (
+                <div className="mt-6 pt-4 border-t">
+                  <h3 className="font-bold text-lg mb-2">配置选项</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {previewWorkflow.config.includeContext && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-green-600">✓</span>
+                        <span>包含上下文</span>
+                      </div>
+                    )}
+                    {previewWorkflow.config.autoCommit && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-green-600">✓</span>
+                        <span>自动提交</span>
+                      </div>
+                    )}
+                    {previewWorkflow.config.runTests && (
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-green-600">✓</span>
+                        <span>运行测试</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="p-4 border-t flex justify-between">
+              <button
+                onClick={() => handleDuplicateWorkflow(previewWorkflow)}
+                className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
+              >
+                📋 复制此工作流
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => {
+                    setSelectedWorkflow(previewWorkflow);
+                    setWorkflowSteps([...previewWorkflow.steps]);
+                    setCurrentStepIndex(0);
+                    setInputs({});
+                    onSelectWorkflow(previewWorkflow, isTestMode);
+                    setShowWorkflowPreview(false);
+                    setPreviewWorkflow(null);
+                  }}
+                  className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                  ▶ 使用此工作流
+                </button>
+                <button
+                  onClick={() => {
+                    setShowWorkflowPreview(false);
+                    setPreviewWorkflow(null);
+                  }}
+                  className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <PromptEditorModal
+        isOpen={showPromptEditor}
+        onClose={() => setShowPromptEditor(false)}
+        onSave={(newPrompt) => {
+          const updatedSteps = [...workflowSteps];
+          updatedSteps[currentStepIndex] = {
+            ...updatedSteps[currentStepIndex],
+            prompt: newPrompt
+          };
+          setWorkflowSteps(updatedSteps);
+          if (customStep) {
+            setCustomStep({
+              ...customStep,
+              prompt: newPrompt
+            });
+          }
+        }}
+        initialPrompt={editingPrompt}
+        stepName={currentStep?.name}
+        contextData={{
+          project_path: context?.projectPath || '',
+          cwd: context?.projectPath || '',
+          previous_output: currentStepIndex > 0 && context?.outputs[currentStepIndex - 1]
+            ? context.outputs[currentStepIndex - 1].conversations[context.outputs[currentStepIndex - 1].conversations.length - 1]?.response || ''
+            : ''
         }}
       />
     </div>

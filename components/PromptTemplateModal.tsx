@@ -18,6 +18,12 @@ export default function PromptTemplateModal({ isOpen, onClose, onSelectTemplate,
   const [additionalText, setAdditionalText] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [viewMode, setViewMode] = useState<'raw' | 'rendered'>('raw');
+  const [projectPath, setProjectPath] = useState('');
+
+  useEffect(() => {
+    const savedPath = localStorage.getItem('projectPath') || '';
+    setProjectPath(savedPath);
+  }, []);
 
   useEffect(() => {
     if (isOpen) {
@@ -91,8 +97,8 @@ export default function PromptTemplateModal({ isOpen, onClose, onSelectTemplate,
       }
     }
 
-    rendered = rendered.replace(/\$\{cwd\}/g, '/Users/gaodong/Desktop/claude_prompt/claude-dev-assistant');
-    rendered = rendered.replace(/\{\{cwd\}\}/g, '/Users/gaodong/Desktop/claude_prompt/claude-dev-assistant');
+    rendered = rendered.replace(/\$\{cwd\}/g, projectPath);
+    rendered = rendered.replace(/\{\{cwd\}\}/g, projectPath);
 
     if (additionalText) {
       rendered += '\n\n---\n\n' + additionalText;
@@ -251,8 +257,8 @@ export default function PromptTemplateModal({ isOpen, onClose, onSelectTemplate,
             </div>
           </div>
 
-          {/* 中间：参数填写 1/4 */}
-          <div className="w-1/4 border-r flex flex-col overflow-hidden bg-gray-50">
+          {/* 中间：参数填写 - 扩大到3/8 */}
+          <div className="w-3/8 border-r flex flex-col overflow-hidden bg-gray-50" style={{width: '37.5%'}}>
             {selectedTemplate ? (
               <>
                 <div className="p-3 border-b bg-white">
@@ -267,54 +273,86 @@ export default function PromptTemplateModal({ isOpen, onClose, onSelectTemplate,
                         📝 参数 ({selectedTemplate.parameters.filter(p => p.required).length} 必填)
                       </div>
 
-                      {selectedTemplate.parameters.map(param => (
-                        <div key={param.name} className="space-y-1">
-                          <label className="block">
-                            <div className="flex items-center gap-1 mb-1">
-                              <span className="font-medium text-xs text-gray-700">{param.name}</span>
-                              {param.required && <span className="text-red-500 text-xs">*</span>}
-                              <span className="text-xs bg-purple-100 text-purple-700 px-1 py-0.5 rounded">
+                      {selectedTemplate.parameters.map(param => {
+                        // 智能参数元数据
+                        const getParameterMetadata = (paramName: string) => {
+                          const commonParams: Record<string, { description: string; example: string; multiline?: boolean }> = {
+                            requirement: { 
+                              description: '需求描述或任务说明', 
+                              example: '实现用户登录功能，支持邮箱和手机号登录',
+                              multiline: true
+                            },
+                            code: { 
+                              description: '待处理的代码片段', 
+                              example: 'function add(a, b) { return a + b; }',
+                              multiline: true
+                            },
+                            file_path: { 
+                              description: '文件路径', 
+                              example: 'app/page.tsx' 
+                            },
+                            task: {
+                              description: '任务描述',
+                              example: '分析代码质量问题',
+                              multiline: true
+                            },
+                            query: {
+                              description: '查询内容',
+                              example: '如何优化性能',
+                              multiline: true
+                            },
+                            files: {
+                              description: '文件列表（每行一个）',
+                              example: 'lib/api.ts\ncomponents/Form.tsx',
+                              multiline: true
+                            }
+                          };
+                          
+                          const metadata = commonParams[paramName] || {
+                            description: param.description,
+                            example: param.description,
+                            multiline: param.type === 'code' || param.type === 'files' || paramName.toLowerCase().includes('description')
+                          };
+                          
+                          return metadata;
+                        };
+                        
+                        const meta = getParameterMetadata(param.name);
+                        const isMultiline = meta.multiline || param.type === 'code' || param.type === 'files';
+                        
+                        return (
+                          <div key={param.name} className="bg-white border border-gray-200 rounded-lg p-3 hover:border-purple-300 transition-colors">
+                            <div className="flex items-start justify-between mb-1.5">
+                              <label className="block text-xs font-semibold text-gray-800">
+                                {param.name}
+                                {param.required && <span className="text-red-500 ml-1">*</span>}
+                              </label>
+                              <span className="text-xs bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded">
                                 {param.type}
                               </span>
                             </div>
-                            <p className="text-xs text-gray-600 mb-1">{param.description}</p>
-                          </label>
-
-                          {param.type === 'code' ? (
-                            <textarea
-                              value={parameters[param.name] || ''}
-                              onChange={(e) => setParameters({ ...parameters, [param.name]: e.target.value })}
-                              rows={4}
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder={`输入${param.description}`}
-                            />
-                          ) : param.type === 'files' ? (
-                            <textarea
-                              value={parameters[param.name] || ''}
-                              onChange={(e) => setParameters({ ...parameters, [param.name]: e.target.value })}
-                              rows={3}
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-xs font-mono focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder="每行一个文件"
-                            />
-                          ) : param.name.toLowerCase().includes('task') || param.name.toLowerCase().includes('query') ? (
-                            <textarea
-                              value={parameters[param.name] || ''}
-                              onChange={(e) => setParameters({ ...parameters, [param.name]: e.target.value })}
-                              rows={3}
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder={`输入${param.description}`}
-                            />
-                          ) : (
-                            <input
-                              type={param.type === 'number' ? 'number' : 'text'}
-                              value={parameters[param.name] || ''}
-                              onChange={(e) => setParameters({ ...parameters, [param.name]: e.target.value })}
-                              className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500"
-                              placeholder={param.description}
-                            />
-                          )}
-                        </div>
-                      ))}
+                            <div className="text-xs text-gray-500 mb-2">{meta.description}</div>
+                            {isMultiline ? (
+                              <textarea
+                                value={parameters[param.name] || ''}
+                                onChange={(e) => setParameters({ ...parameters, [param.name]: e.target.value })}
+                                rows={4}
+                                className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                placeholder={meta.example}
+                                style={{ fontFamily: param.type === 'code' ? 'monospace' : 'inherit' }}
+                              />
+                            ) : (
+                              <input
+                                type={param.type === 'number' ? 'number' : 'text'}
+                                value={parameters[param.name] || ''}
+                                onChange={(e) => setParameters({ ...parameters, [param.name]: e.target.value })}
+                                className="w-full px-2 py-1.5 text-xs border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-purple-500"
+                                placeholder={meta.example}
+                              />
+                            )}
+                          </div>
+                        );
+                      })}
                     </>
                   )}
 

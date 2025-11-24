@@ -42,9 +42,9 @@ export class ClaudeService {
     }
 
     const response = await this.client.messages.create({
-      model: options?.model || 'claude-sonnet-4-20250514',
-      max_tokens: options?.maxTokens || 8192,
-      temperature: options?.temperature || 0.7,
+      model: options?.model || process.env.NEXT_PUBLIC_CLAUDE_MODEL || 'claude-sonnet-4-20250514',
+      max_tokens: options?.maxTokens || parseInt(process.env.NEXT_PUBLIC_MAX_TOKENS || '4096'),
+      temperature: options?.temperature || parseFloat(process.env.NEXT_PUBLIC_TEMPERATURE || '0.7'),
       messages: [
         {
           role: 'user',
@@ -79,9 +79,9 @@ export class ClaudeService {
       throw new Error('Claude API 未初始化，请先设置 API Key');
     }
 
-    const model = options?.model || 'claude-sonnet-4-20250514';
+    const model = options?.model || process.env.NEXT_PUBLIC_CLAUDE_MODEL || 'claude-sonnet-4-20250514';
     const maxTokens = options?.maxTokens || 
-                      parseInt(process.env.NEXT_PUBLIC_CLAUDE_CODE_MAX_OUTPUT_TOKENS || '8192');
+                      parseInt(process.env.NEXT_PUBLIC_MAX_TOKENS || '4096');
     
     console.log('[Claude Service] 模型:', model);
     console.log('[Claude Service] Max Tokens:', maxTokens);
@@ -100,7 +100,7 @@ export class ClaudeService {
         const requestParams: any = {
           model,
           max_tokens: maxTokens,
-          temperature: options?.temperature || 0.7,
+          temperature: options?.temperature || parseFloat(process.env.NEXT_PUBLIC_TEMPERATURE || '0.7'),
           messages,
           stream: true
         };

@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { PromptTemplate } from '@/lib/prompts/prompt-scanner';
 import { PROMPT_CATEGORIES, getCategoriesByIds, CATEGORY_COLORS } from '@/lib/categories';
+import { getFavorites, addFavorite, removeFavorite, isFavorite, getRecentItems, addRecentItem } from '@/lib/favorites';
 
 interface PromptTemplateSelectorProps {
   onSelectTemplate: (template: PromptTemplate) => void;
@@ -14,10 +15,33 @@ export default function PromptTemplateSelector({ onSelectTemplate, selectedTempl
   const [loading, setLoading] = useState(true);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'all' | 'favorites' | 'recent'>('all');
+  const [favorites, setFavorites] = useState<string[]>([]);
 
   useEffect(() => {
     loadPrompts();
+    loadFavorites();
   }, []);
+
+  const loadFavorites = () => {
+    const favs = getFavorites().filter(f => f.type === 'prompt').map(f => f.id);
+    setFavorites(favs);
+  };
+
+  const handleToggleFavorite = (promptId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isFavorite(promptId, 'prompt')) {
+      removeFavorite(promptId, 'prompt');
+    } else {
+      addFavorite(promptId, 'prompt');
+    }
+    loadFavorites();
+  };
+
+  const handleSelectTemplate = (template: PromptTemplate) => {
+    addRecentItem(template.id, 'prompt');
+    onSelectTemplate(template);
+  };
 
   const loadPrompts = async () => {
     setLoading(true);
@@ -43,15 +67,33 @@ export default function PromptTemplateSelector({ onSelectTemplate, selectedTempl
     );
   };
 
-  const filteredPrompts = prompts.filter(p => {
-    const matchesCategory = selectedCategories.length === 0 || 
-      (p.categories && p.categories.some(cat => selectedCategories.includes(cat)));
-    const matchesSearch = !searchQuery || 
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.description.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    return matchesCategory && matchesSearch;
-  });
+  const filteredPrompts = useMemo(() => {
+    let filtered = prompts;
+
+    if (viewMode === 'favorites') {
+      filtered = prompts.filter(p => favorites.includes(p.id));
+    } else if (viewMode === 'recent') {
+      const recentIds = getRecentItems().filter(r => r.type === 'prompt').map(r => r.id);
+      filtered = prompts.filter(p => recentIds.includes(p.id));
+      filtered.sort((a, b) => {
+        const aIndex = recentIds.indexOf(a.id);
+        const bIndex = recentIds.indexOf(b.id);
+        return aIndex - bIndex;
+      });
+    }
+
+    filtered = filtered.filter(p => {
+      const matchesCategory = selectedCategories.length === 0 || 
+        (p.categories && p.categories.some(cat => selectedCategories.includes(cat)));
+      const matchesSearch = !searchQuery || 
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        p.description.toLowerCase().includes(searchQuery.toLowerCase());
+      
+      return matchesCategory && matchesSearch;
+    });
+
+    return filtered;
+  }, [prompts, viewMode, favorites, selectedCategories, searchQuery]);
 
   if (loading) {
     return (
@@ -64,6 +106,38 @@ export default function PromptTemplateSelector({ onSelectTemplate, selectedTempl
   return (
     <div className="h-full flex flex-col">
       <div className="p-4 border-b space-y-3">
+        <div className="flex gap-2 mb-3">
+          <button
+            onClick={() => setViewMode('all')}
+            className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'all'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            📚 全部
+          </button>
+          <button
+            onClick={() => setViewMode('favorites')}
+            className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'favorites'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            ⭐ 收藏 {favorites.length > 0 && `(${favorites.length})`}
+          </button>
+          <button
+            onClick={() => setViewMode('recent')}
+            className={`flex-1 px-3 py-2 text-sm font-medium rounded-md transition-colors ${
+              viewMode === 'recent'
+                ? 'bg-blue-600 text-white'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            }`}
+          >
+            🕐 最近
+          </button>
+        </div>
         <div>
           <input
             type="text"
@@ -118,14 +192,21 @@ export default function PromptTemplateSelector({ onSelectTemplate, selectedTempl
         {filteredPrompts.map(prompt => (
           <div
             key={prompt.id}
-            onClick={() => onSelectTemplate(prompt)}
-            className={`p-4 border rounded-lg cursor-pointer transition-all ${
+            onClick={() => handleSelectTemplate(prompt)}
+            className={`p-4 border rounded-lg cursor-pointer transition-all relative ${
               selectedTemplate?.id === prompt.id
                 ? 'border-blue-500 bg-blue-50 shadow-md'
                 : 'border-gray-200 hover:border-blue-300 hover:shadow'
             }`}
           >
-            <div className="mb-2">
+            <button
+              onClick={(e) => handleToggleFavorite(prompt.id, e)}
+              className="absolute top-2 right-2 text-2xl hover:scale-110 transition-transform"
+              title={isFavorite(prompt.id, 'prompt') ? '取消收藏' : '收藏'}
+            >
+              {isFavorite(prompt.id, 'prompt') ? '⭐' : '☆'}
+            </button>
+            <div className="mb-2 pr-8">
               <h3 className="font-bold text-gray-800 mb-1">{prompt.name}</h3>
               {prompt.categories && prompt.categories.length > 0 && (
                 <div className="flex flex-wrap gap-1">

@@ -25,7 +25,7 @@ export const FILE_OPERATION_TOOLS = [
       properties: {
         path: {
           type: 'string',
-          description: '要读取的文件的绝对路径，例如: /Users/gaodong/Desktop/claude-prompt/README.md'
+          description: '要读取的文件的绝对路径，例如: /path/to/your/project/README.md'
         }
       },
       required: ['path']
@@ -153,7 +153,7 @@ ${contextSection}
 
 **重要提醒**:
 - 你可以访问用户电脑上的任何文件，不仅限于项目目录
-- 支持绝对路径: /Users/gaodong/Desktop/文件.txt
+- 支持绝对路径: /path/to/your/文件.txt
 - 支持波浪号: ~/Desktop/文件.txt (会自动展开)
 - 支持中文路径和文件名
 
@@ -168,7 +168,7 @@ ${contextSection}
 2. **读取任意文件**:
    - 使用 read_file 读取用户提供的任何文件路径
    - 例如: read_file({ path: "~/Desktop/JTBD RBAC权限文档.txt" })
-   - 或: read_file({ path: "/Users/gaodong/Desktop/需求文档.md" })
+   - 或: read_file({ path: "/path/to/your/需求文档.md" })
 
 3. **创建新文件**:
    - 使用 write_file 工具直接创建文件

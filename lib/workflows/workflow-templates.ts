@@ -11,6 +11,7 @@ export interface Workflow {
   name: string;
   description: string;
   icon: string;
+  category?: string;
   steps: WorkflowStep[];
   config: {
     projectPath?: string;
@@ -20,11 +21,28 @@ export interface Workflow {
   };
 }
 
+export interface WorkflowCategory {
+  id: string;
+  name: string;
+  icon: string;
+  description: string;
+}
+
+export const workflowCategories: WorkflowCategory[] = [
+  { id: 'all', name: '全部', icon: '📋', description: '所有工作流' },
+  { id: 'dev', name: '开发', icon: '💻', description: '功能开发相关工作流' },
+  { id: 'fix', name: '修复', icon: '🔧', description: 'Bug修复相关工作流' },
+  { id: 'refactor', name: '重构', icon: '♻️', description: '代码重构相关工作流' },
+  { id: 'doc', name: '文档', icon: '📝', description: '文档编写相关工作流' },
+  { id: 'test', name: '测试', icon: '🧪', description: '测试相关工作流' }
+];
+
 export const workflows: Workflow[] = [
   {
     id: 'feature-complete',
     name: '功能开发完整流程',
     icon: '🚀',
+    category: 'dev',
     description: '从需求到上线：开发 → Review → 单元测试 → E2E测试 → Commit',
     config: {
       includeContext: true,
@@ -247,6 +265,7 @@ E2E框架: {{e2e_framework}}
     id: 'bug-fix-complete',
     name: 'Bug修复完整流程',
     icon: '🐛',
+    category: 'fix',
     description: '从Bug分析到修复提交：定位 → 修复 → 测试 → Commit',
     config: {
       includeContext: true,
@@ -380,6 +399,7 @@ Fixes #<issue_number>
     id: 'refactor-complete',
     name: '代码重构完整流程',
     icon: '♻️',
+    category: 'refactor',
     description: '安全重构：分析 → 重构 → 测试 → Commit',
     config: {
       includeContext: true,
@@ -496,9 +516,262 @@ refactor(<scope>): <重构目标>
 **输出完整的commit命令**`
       }
     ]
+  },
+  {
+    id: 'quick-feature',
+    name: '快速功能开发',
+    icon: '⚡',
+    category: 'dev',
+    description: '轻量级开发流程：需求分析 → 代码实现',
+    config: { includeContext: true },
+    steps: [
+      {
+        id: 'quick-analyze',
+        name: '需求分析',
+        prompt: `分析以下需求并给出实现方案：
+
+<requirement>
+{{requirement}}
+</requirement>
+
+<project_path>
+{{project_path}}
+</project_path>
+
+请输出：
+1. 功能要点
+2. 实现方案
+3. 涉及文件`
+      },
+      {
+        id: 'quick-implement',
+        name: '代码实现',
+        prompt: `基于上一步的方案实现代码：
+
+<plan>
+{{previous_output}}
+</plan>
+
+请输出完整可用的代码文件。`
+      }
+    ]
+  },
+  {
+    id: 'quick-fix',
+    name: '快速Bug修复',
+    icon: '🚑',
+    category: 'fix',
+    description: '快速修复流程：定位问题 → 修复代码',
+    config: { includeContext: true },
+    steps: [
+      {
+        id: 'quick-diagnose',
+        name: 'Bug定位',
+        prompt: `分析以下Bug并定位问题：
+
+<bug_description>
+{{requirement}}
+</bug_description>
+
+<error_logs>
+{{error_logs}}
+</error_logs>
+
+请输出：
+1. 根本原因
+2. 问题文件位置
+3. 修复方案`
+      },
+      {
+        id: 'quick-fix-code',
+        name: '修复代码',
+        prompt: `实施Bug修复：
+
+<diagnosis>
+{{previous_output}}
+</diagnosis>
+
+请输出修复后的完整代码。`
+      }
+    ]
+  },
+  {
+    id: 'code-review',
+    name: '代码审查',
+    icon: '👀',
+    category: 'dev',
+    description: '全面的代码审查：安全 → 性能 → 可读性',
+    config: { includeContext: true },
+    steps: [
+      {
+        id: 'review-code',
+        name: '代码审查',
+        prompt: `请审查以下代码：
+
+<code>
+{{requirement}}
+</code>
+
+审查维度：
+- 🔒 安全性
+- ⚡ 性能
+- 🐛 Bug风险
+- 📖 可读性
+- 🏗️ 架构设计
+
+请按严重程度分类输出问题和建议。`
+      }
+    ]
+  },
+  {
+    id: 'write-tests',
+    name: '编写测试用例',
+    icon: '🧪',
+    category: 'test',
+    description: '生成全面的测试：单元测试 + E2E测试',
+    config: { includeContext: true },
+    steps: [
+      {
+        id: 'unit-tests',
+        name: '单元测试',
+        prompt: `为以下代码生成单元测试：
+
+<code>
+{{requirement}}
+</code>
+
+<test_framework>
+{{test_framework}}
+</test_framework>
+
+要求：
+- 覆盖所有公共方法
+- 测试边界条件
+- Mock外部依赖
+- 目标覆盖率90%+`
+      },
+      {
+        id: 'e2e-tests',
+        name: 'E2E测试',
+        prompt: `生成端到端测试：
+
+<feature>
+{{requirement}}
+</feature>
+
+<e2e_framework>
+{{e2e_framework}}
+</e2e_framework>
+
+覆盖完整用户流程和边界情况。`
+      }
+    ]
+  },
+  {
+    id: 'api-doc',
+    name: 'API文档生成',
+    icon: '📘',
+    category: 'doc',
+    description: '生成API文档：接口定义 → 使用示例',
+    config: { includeContext: true },
+    steps: [
+      {
+        id: 'api-doc-gen',
+        name: '生成文档',
+        prompt: `为以下API生成文档：
+
+<api_code>
+{{requirement}}
+</api_code>
+
+请输出：
+1. 接口概述
+2. 请求参数说明
+3. 响应格式说明
+4. 错误码说明
+5. 调用示例（curl + 代码）`
+      }
+    ]
+  },
+  {
+    id: 'component-doc',
+    name: '组件文档生成',
+    icon: '📗',
+    category: 'doc',
+    description: '生成组件文档：Props → 示例 → 最佳实践',
+    config: { includeContext: true },
+    steps: [
+      {
+        id: 'component-doc-gen',
+        name: '生成文档',
+        prompt: `为以下组件生成文档：
+
+<component_code>
+{{requirement}}
+</component_code>
+
+请输出：
+1. 组件概述
+2. Props说明（类型、默认值、必填）
+3. 使用示例
+4. 最佳实践
+5. 注意事项`
+      }
+    ]
+  },
+  {
+    id: 'performance-opt',
+    name: '性能优化',
+    icon: '⚡',
+    category: 'refactor',
+    description: '性能分析与优化：分析瓶颈 → 优化方案 → 实施优化',
+    config: { includeContext: true },
+    steps: [
+      {
+        id: 'perf-analyze',
+        name: '性能分析',
+        prompt: `分析以下代码的性能问题：
+
+<code>
+{{requirement}}
+</code>
+
+请识别：
+1. 性能瓶颈点
+2. 资源消耗分析
+3. 优化建议（按优先级）`
+      },
+      {
+        id: 'perf-optimize',
+        name: '实施优化',
+        prompt: `实施性能优化：
+
+<analysis>
+{{previous_output}}
+</analysis>
+
+请输出：
+1. 优化后的代码
+2. 性能提升预期
+3. 注意事项`
+      }
+    ]
   }
 ];
 
 export function getWorkflowById(id: string): Workflow | undefined {
   return workflows.find(w => w.id === id);
+}
+
+export function getWorkflowsByCategory(category: string): Workflow[] {
+  if (category === 'all') return workflows;
+  return workflows.filter(w => w.category === category);
+}
+
+export function duplicateWorkflow(workflow: Workflow): Workflow {
+  return {
+    ...workflow,
+    id: `${workflow.id}-copy-${Date.now()}`,
+    name: `${workflow.name} (副本)`
+  };
 }

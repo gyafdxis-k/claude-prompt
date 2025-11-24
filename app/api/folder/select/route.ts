@@ -10,7 +10,7 @@ export async function GET() {
     
     const { stdout, stderr } = await execAsync(script);
     
-    if (stderr) {
+    if (stderr && !stderr.includes('CATransaction')) {
       console.error('[Folder Selector] stderr:', stderr);
     }
     

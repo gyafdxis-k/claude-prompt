@@ -2,13 +2,21 @@
 
 import { useState, useEffect } from 'react';
 import WorkflowPage from '@/components/WorkflowPage';
+import PromptStudio from '@/components/PromptStudio';
 import StreamingDisplay from '@/components/StreamingDisplay';
+import ProjectSwitcher from '@/components/ProjectSwitcher';
+import OnboardingModal from '@/components/OnboardingModal';
+import ExecutionHistoryPanel from '@/components/ExecutionHistoryPanel';
 import { workflows, Workflow } from '@/lib/workflows/workflow-templates';
 import { WorkflowExecutionContext, StepOutput } from '@/lib/workflows/workflow-engine';
 import { WorkflowStep } from '@/lib/workflows/workflow-templates';
 import { ProjectContext } from '@/lib/context/project-scanner';
+import { saveExecutionHistory, updateExecutionHistory, ExecutionHistory } from '@/lib/execution-history';
+
+type AppMode = 'workflow' | 'prompt';
 
 export default function Home() {
+  const [mode, setMode] = useState<AppMode>('workflow');
   const [projectPath, setProjectPath] = useState('');
   const [context, setContext] = useState<WorkflowExecutionContext | null>(null);
   const [isExecuting, setIsExecuting] = useState(false);
@@ -20,14 +28,25 @@ export default function Home() {
   const [streamingResponse, setStreamingResponse] = useState('');
   const [taskInfo, setTaskInfo] = useState<any>(null);
   const [isSelectingFolder, setIsSelectingFolder] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [currentExecutionId, setCurrentExecutionId] = useState<string | null>(null);
 
   useEffect(() => {
-    const savedPath = localStorage.getItem('projectPath') || '/Users/gaodong/Desktop/claude_prompt/claude-dev-assistant';
+    const savedPath = localStorage.getItem('projectPath') || '';
+    const hasSeenOnboarding = localStorage.getItem('hasSeenOnboarding');
+    
     setProjectPath(savedPath);
     loadProjectContext(savedPath);
+    
+    if (!hasSeenOnboarding) {
+      setShowOnboarding(true);
+    }
   }, []);
 
   const loadProjectContext = async (path: string) => {
+    if (!path) return;
+    
     try {
       const response = await fetch('/api/project/scan', {
         method: 'POST',
@@ -44,15 +63,30 @@ export default function Home() {
     }
   };
 
-  const handleSelectWorkflow = (workflow: Workflow) => {
+  const handleSelectWorkflow = (workflow: Workflow, isTestMode?: boolean) => {
     setSelectedWorkflow(workflow);
-    setContext({
+    const newContext = {
       workflow,
       projectPath,
       inputs: initialInputs,
       outputs: [],
       projectContext: projectContext || undefined
-    });
+    };
+    setContext(newContext);
+    
+    if (!isTestMode) {
+      const savedHistory = saveExecutionHistory({
+        workflowId: workflow.id,
+        workflowName: workflow.name,
+        projectPath: projectPath || 'Unknown',
+        startTime: Date.now(),
+        status: 'running',
+        outputs: []
+      });
+      setCurrentExecutionId(savedHistory.id);
+    } else {
+      setCurrentExecutionId(null);
+    }
   };
 
   const handleExecuteStep = async (step: WorkflowStep, inputs: Record<string, any>, isNewStep: boolean = false) => {
@@ -134,6 +168,7 @@ export default function Home() {
                   if (!prevContext) return prevContext;
                   
                   const currentStepIndex = prevContext.outputs.findIndex(o => o.stepId === step.id);
+                  let newOutputs;
                   
                   if (currentStepIndex >= 0) {
                     const updatedOutputs = [...prevContext.outputs];
@@ -141,7 +176,7 @@ export default function Home() {
                       ...updatedOutputs[currentStepIndex],
                       conversations: [...updatedOutputs[currentStepIndex].conversations, conversationTurn]
                     };
-                    return { ...prevContext, outputs: updatedOutputs, inputs: updatedContext.inputs };
+                    newOutputs = updatedOutputs;
                   } else {
                     const newStepOutput = {
                       stepId: step.id,
@@ -149,8 +184,17 @@ export default function Home() {
                       conversations: [conversationTurn],
                       completed: false
                     };
-                    return { ...prevContext, outputs: [...prevContext.outputs, newStepOutput], inputs: updatedContext.inputs };
+                    newOutputs = [...prevContext.outputs, newStepOutput];
                   }
+                  
+                  if (currentExecutionId) {
+                    updateExecutionHistory(currentExecutionId, {
+                      outputs: newOutputs,
+                      endTime: Date.now()
+                    });
+                  }
+                  
+                  return { ...prevContext, outputs: newOutputs, inputs: updatedContext.inputs };
                 });
               } else if (data.type === 'error') {
                 throw new Error(data.data);
@@ -164,6 +208,12 @@ export default function Home() {
 
     } catch (error: any) {
       alert(`执行失败: ${error.message}`);
+      if (currentExecutionId) {
+        updateExecutionHistory(currentExecutionId, {
+          status: 'failed',
+          endTime: Date.now()
+        });
+      }
     } finally {
       setIsExecuting(false);
       setStreamingPrompt('');
@@ -174,9 +224,35 @@ export default function Home() {
   return (
     <div className="h-screen flex flex-col">
       <header className="h-14 border-b border-gray-200 flex items-center justify-between px-4 bg-white shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-2xl">🚀</span>
-          <h1 className="text-xl font-bold">Claude Dev Assistant</h1>
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🚀</span>
+            <h1 className="text-xl font-bold">Claude Dev Assistant</h1>
+          </div>
+          
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            <button
+              onClick={() => setMode('workflow')}
+              className={`px-4 py-1.5 text-sm rounded-md transition-all ${
+                mode === 'workflow'
+                  ? 'bg-white text-blue-600 font-medium shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              🔄 工作流模式
+            </button>
+            <button
+              onClick={() => setMode('prompt')}
+              className={`px-4 py-1.5 text-sm rounded-md transition-all ${
+                mode === 'prompt'
+                  ? 'bg-white text-blue-600 font-medium shadow-sm'
+                  : 'text-gray-600 hover:text-gray-900'
+              }`}
+            >
+              ⚡ Prompt 模式
+            </button>
+          </div>
+
           {projectContext && projectContext.techStack.length > 0 && (
             <span className="text-sm text-gray-600">
               | {projectContext.techStack.join(', ')}
@@ -185,9 +261,31 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="text-sm text-gray-600">
-            📁 {projectPath.split('/').slice(-2).join('/')}
-          </div>
+          <ProjectSwitcher
+            currentPath={projectPath}
+            onSwitch={(path) => {
+              setProjectPath(path);
+              localStorage.setItem('projectPath', path);
+              loadProjectContext(path);
+            }}
+          />
+          
+          <button
+            onClick={() => setShowHistory(true)}
+            className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            title="执行历史"
+          >
+            📜 历史
+          </button>
+          
+          <button
+            onClick={() => setShowOnboarding(true)}
+            className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 transition-colors"
+            title="查看引导"
+          >
+            ❓
+          </button>
+          
           <button
             onClick={() => setShowSettings(true)}
             className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-md transition-colors"
@@ -198,24 +296,37 @@ export default function Home() {
       </header>
 
       <div className="flex-1 overflow-hidden">
-        <WorkflowPage
-          onExecuteStep={handleExecuteStep}
-          onSelectWorkflow={handleSelectWorkflow}
-          onCompleteStep={(stepId) => {
-            if (!context) return;
-            const stepIndex = context.outputs.findIndex(o => o.stepId === stepId);
-            if (stepIndex >= 0) {
-              const updatedOutputs = [...context.outputs];
-              updatedOutputs[stepIndex] = {
-                ...updatedOutputs[stepIndex],
-                completed: true
-              };
-              setContext({ ...context, outputs: updatedOutputs });
-            }
-          }}
-          context={context}
-          isExecuting={isExecuting}
-        />
+        {mode === 'workflow' ? (
+          <WorkflowPage
+            onExecuteStep={handleExecuteStep}
+            onSelectWorkflow={handleSelectWorkflow}
+            onCompleteStep={(stepId) => {
+              if (!context) return;
+              const stepIndex = context.outputs.findIndex(o => o.stepId === stepId);
+              if (stepIndex >= 0) {
+                const updatedOutputs = [...context.outputs];
+                updatedOutputs[stepIndex] = {
+                  ...updatedOutputs[stepIndex],
+                  completed: true
+                };
+                setContext({ ...context, outputs: updatedOutputs });
+                
+                if (currentExecutionId) {
+                  const allCompleted = updatedOutputs.every(o => o.completed);
+                  updateExecutionHistory(currentExecutionId, {
+                    outputs: updatedOutputs,
+                    status: allCompleted ? 'completed' : 'running',
+                    endTime: allCompleted ? Date.now() : undefined
+                  });
+                }
+              }
+            }}
+            context={context}
+            isExecuting={isExecuting}
+          />
+        ) : (
+          <PromptStudio />
+        )}
       </div>
 
       <StreamingDisplay
@@ -223,6 +334,76 @@ export default function Home() {
         response={streamingResponse}
         isStreaming={isExecuting && (streamingPrompt || streamingResponse) ? true : false}
         taskInfo={taskInfo}
+      />
+
+      <OnboardingModal
+        isOpen={showOnboarding}
+        onClose={() => {
+          setShowOnboarding(false);
+          localStorage.setItem('hasSeenOnboarding', 'true');
+        }}
+        onComplete={(selectedMode, projectPath) => {
+          setMode(selectedMode);
+          if (projectPath) {
+            setProjectPath(projectPath);
+            localStorage.setItem('projectPath', projectPath);
+            loadProjectContext(projectPath);
+          }
+          setShowOnboarding(false);
+          localStorage.setItem('hasSeenOnboarding', 'true');
+        }}
+      />
+
+      <ExecutionHistoryPanel
+        isOpen={showHistory}
+        onClose={() => setShowHistory(false)}
+        onLoadHistory={(history: ExecutionHistory) => {
+          const workflow = workflows.find(w => w.id === history.workflowId);
+          if (workflow) {
+            setSelectedWorkflow(workflow);
+            setMode('workflow');
+            setContext({
+              workflow,
+              projectPath: history.projectPath,
+              inputs: {},
+              outputs: history.outputs,
+              projectContext: projectContext || undefined
+            });
+            setCurrentExecutionId(history.id);
+            setShowHistory(false);
+          }
+        }}
+        onSaveAsWorkflow={async (history: ExecutionHistory) => {
+          const newWorkflow: Workflow = {
+            id: `from-history-${Date.now()}`,
+            name: `${history.workflowName} (副本)`,
+            description: `基于执行历史创建: ${new Date(history.startTime).toLocaleString('zh-CN')}`,
+            icon: '📦',
+            category: 'custom',
+            steps: history.outputs.map((output, index) => ({
+              id: `step-${index + 1}`,
+              name: output.stepName,
+              prompt: output.conversations.length > 0 
+                ? output.conversations[0].prompt 
+                : '请输入 prompt 内容',
+              requiresApproval: false
+            })),
+            config: {}
+          };
+          
+          try {
+            await fetch('/api/workflows/custom', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(newWorkflow)
+            });
+            alert(`工作流 "${newWorkflow.name}" 已保存！您可以在工作流列表中找到它。`);
+            setShowHistory(false);
+          } catch (error) {
+            console.error('保存工作流失败:', error);
+            alert('保存失败，请重试');
+          }
+        }}
       />
 
       {showSettings && (
@@ -251,7 +432,6 @@ export default function Home() {
                       if (data.path) {
                         setProjectPath(data.path);
                       } else if (data.cancelled) {
-                        // 用户取消选择，不显示错误
                         console.log('用户取消选择文件夹');
                       } else if (data.error) {
                         alert(`选择文件夹失败: ${data.error}`);

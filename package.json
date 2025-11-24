@@ -3,9 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev:next\" \"npm run dev:server\" --names \"NEXT,SERVER\" --prefix-colors \"cyan,magenta\"",
+    "dev": "next dev",
     "dev:next": "next dev",
-    "dev:server": "tsx server/index.ts 8765",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

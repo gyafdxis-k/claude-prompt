@@ -30,7 +30,9 @@ export default memo(function StreamingDisplay({ prompt, response, isStreaming, t
     <div className="fixed inset-4 bg-white border-2 border-blue-500 shadow-2xl z-50 flex flex-col rounded-lg">
       <div className="bg-blue-600 text-white px-4 py-2 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <span className="font-bold">🧠 Claude 思考中...</span>
+          <span className="font-bold">
+            {isStreaming ? '🧠 Claude 正在实时输出...' : '✅ 完成'}
+          </span>
           {taskInfo && (
             <span className="text-blue-100 text-sm">
               {taskInfo.stepName}
@@ -38,10 +40,13 @@ export default memo(function StreamingDisplay({ prompt, response, isStreaming, t
           )}
         </div>
         {isStreaming && (
-          <div className="flex gap-1">
-            <span className="animate-bounce">●</span>
-            <span className="animate-bounce delay-100">●</span>
-            <span className="animate-bounce delay-200">●</span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-blue-200">流式响应中</span>
+            <div className="flex gap-1">
+              <span className="animate-bounce">●</span>
+              <span className="animate-bounce delay-100">●</span>
+              <span className="animate-bounce delay-200">●</span>
+            </div>
           </div>
         )}
       </div>

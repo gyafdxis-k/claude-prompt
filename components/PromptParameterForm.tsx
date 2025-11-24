@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { PromptTemplate, PromptParameter } from '@/lib/prompts/prompt-scanner';
+import { getPresets, savePreset, deletePreset, ParameterPreset } from '@/lib/parameter-presets';
 
 interface PromptParameterFormProps {
   template: PromptTemplate;
@@ -10,6 +11,44 @@ interface PromptParameterFormProps {
 }
 
 export default function PromptParameterForm({ template, onParametersChange, parameters }: PromptParameterFormProps) {
+  const [presets, setPresets] = useState<ParameterPreset[]>([]);
+  const [showPresets, setShowPresets] = useState(false);
+  const [presetName, setPresetName] = useState('');
+
+  useEffect(() => {
+    loadPresets();
+  }, []);
+
+  const loadPresets = () => {
+    setPresets(getPresets());
+  };
+
+  const handleSavePreset = () => {
+    if (!presetName.trim()) {
+      alert('请输入预设名称');
+      return;
+    }
+    savePreset({
+      name: presetName,
+      parameters
+    });
+    setPresetName('');
+    loadPresets();
+    alert('✅ 预设已保存');
+  };
+
+  const handleLoadPreset = (preset: ParameterPreset) => {
+    onParametersChange(preset.parameters);
+    setShowPresets(false);
+  };
+
+  const handleDeletePreset = (id: string) => {
+    if (confirm('确定要删除这个预设吗？')) {
+      deletePreset(id);
+      loadPresets();
+    }
+  };
+
   const handleChange = (paramName: string, value: any) => {
     onParametersChange({
       ...parameters,
@@ -121,10 +160,72 @@ export default function PromptParameterForm({ template, onParametersChange, para
         <h3 className="text-lg font-bold text-gray-800">
           📝 填写参数
         </h3>
-        <span className="text-sm text-gray-600">
-          {template.parameters.filter(p => p.required).length} 个必填项
-        </span>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowPresets(!showPresets)}
+            className="px-3 py-1 text-sm bg-purple-100 text-purple-700 rounded hover:bg-purple-200 transition-colors"
+          >
+            📋 预设 ({presets.length})
+          </button>
+          <span className="text-sm text-gray-600">
+            {template.parameters.filter(p => p.required).length} 个必填项
+          </span>
+        </div>
       </div>
+
+      {showPresets && (
+        <div className="p-4 bg-purple-50 border border-purple-200 rounded-lg space-y-3">
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={presetName}
+              onChange={(e) => setPresetName(e.target.value)}
+              placeholder="预设名称..."
+              className="flex-1 px-3 py-2 border border-gray-300 rounded-md text-sm"
+            />
+            <button
+              onClick={handleSavePreset}
+              className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 text-sm whitespace-nowrap"
+            >
+              💾 保存当前参数
+            </button>
+          </div>
+
+          {presets.length > 0 ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium text-gray-700">已保存的预设：</p>
+              {presets.map(preset => (
+                <div key={preset.id} className="flex items-center justify-between bg-white p-2 rounded border">
+                  <div className="flex-1">
+                    <p className="font-medium text-sm">{preset.name}</p>
+                    <p className="text-xs text-gray-500">
+                      {new Date(preset.createdAt).toLocaleString('zh-CN')}
+                    </p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => handleLoadPreset(preset)}
+                      className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700"
+                    >
+                      加载
+                    </button>
+                    <button
+                      onClick={() => handleDeletePreset(preset.id)}
+                      className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 text-center py-2">
+              暂无预设，填写参数后点击上方按钮保存
+            </p>
+          )}
+        </div>
+      )}
 
       {template.parameters.map(param => (
         <div key={param.name} className="space-y-2">

@@ -1,0 +1,121 @@
+[
+  {
+    "id": "feature-complete-copy-1763972856693",
+    "name": "功能开发完整流程 (副本)",
+    "icon": "🚀",
+    "category": "dev",
+    "description": "从需求到上线：开发 → Review → 单元测试 → E2E测试 → Commit",
+    "config": {
+      "includeContext": true,
+      "autoCommit": true,
+      "runTests": true
+    },
+    "steps": [
+      {
+        "id": "analyze",
+        "name": "1. 需求分析",
+        "requiresApproval": false,
+        "prompt": "# 需求分析阶段\n\n你是一位资深的技术架构师。请分析以下需求并给出技术方案。\n\n<requirement>\n{{requirement}}\n</requirement>\n\n<project_context>\n当前项目路径: {{project_path}}\n技术栈: {{tech_stack}}\n</project_context>\n\n<codebase_context>\n{{codebase_files}}\n</codebase_context>\n\n**请输出**:\n1. **功能拆解**: 将需求拆分为具体的子任务\n2. **技术方案**: \n   - 涉及的文件和模块\n   - 数据结构设计\n   - API设计（如有）\n   - 状态管理方案\n3. **依赖检查**: 需要新增的依赖\n4. **风险评估**: 潜在的技术风险\n5. **工作量评估**: 预估开发时间\n\n**输出格式**: 使用Markdown，清晰分段"
+      },
+      {
+        "id": "implement",
+        "name": "2. 代码实现",
+        "requiresApproval": false,
+        "prompt": "# 代码实现阶段\n\n基于上一步的技术方案，现在开始编写代码。\n\n<implementation_plan>\n{{previous_output}}\n</implementation_plan>\n\n<project_context>\n项目路径: {{project_path}}\n相关文件: {{related_files}}\n</project_context>\n\n**实现要求**:\n1. ✅ 遵循项目现有的代码风格和架构模式\n2. ✅ 使用项目已有的工具库和组件\n3. ✅ 添加必要的错误处理\n4. ✅ 添加适当的类型定义（TypeScript）\n5. ✅ 代码清晰可读，关键逻辑添加注释\n6. ✅ 考虑边界条件和异常情况\n\n**输出**:\n- 完整的代码文件（可直接使用）\n- 如需修改现有文件，提供完整的文件内容\n- 列出所有需要创建/修改的文件路径"
+      },
+      {
+        "id": "review",
+        "name": "3. 代码审查",
+        "requiresApproval": false,
+        "prompt": "# 代码审查阶段\n\n你是一位严格的代码审查专家。请review刚刚实现的代码。\n\n<implemented_code>\n{{previous_output}}\n</implemented_code>\n\n<git_diff>\n{{git_diff}}\n</git_diff>\n\n**审查维度**:\n- 🔒 **安全**: SQL注入、XSS、敏感信息泄露\n- ⚡ **性能**: 不必要的重渲染、N+1查询、内存泄漏\n- 🐛 **Bug风险**: 空值检查、边界条件、并发问题\n- 📖 **可读性**: 命名、注释、复杂度\n- 🏗️ **架构**: SOLID原则、设计模式是否合理\n- ✅ **测试覆盖**: 是否需要补充测试\n\n**输出格式**:\n## 🚨 严重问题 (Blocker)\n- [ ] 问题描述 | 文件:行号 | 修复建议\n\n## ⚠️ 重要问题 (Major)  \n- [ ] 问题描述 | 文件:行号 | 修复建议\n\n## 💡 优化建议 (Minor)\n- [ ] 建议描述\n\n## ✨ 优秀实践\n- 列出值得称赞的地方\n\n**如果有严重或重要问题，提供修复后的完整代码**"
+      },
+      {
+        "id": "unit-test",
+        "name": "4. 单元测试生成",
+        "requiresApproval": false,
+        "prompt": "# 单元测试生成阶段\n\n为刚刚实现的代码生成全面的单元测试。\n\n<code_to_test>\n{{implemented_code}}\n</code_to_test>\n\n<project_test_setup>\n测试框架: {{test_framework}}\n测试文件模式: {{test_pattern}}\n现有测试示例: {{existing_tests}}\n</project_test_setup>\n\n**测试要求**:\n- ✅ 覆盖所有公共方法/函数\n- ✅ 测试正常流程\n- ✅ 测试边界条件（空值、边界值）\n- ✅ 测试异常情况\n- ✅ Mock 外部依赖\n- ✅ 目标覆盖率: 90%+\n\n**输出**:\n1. 完整的测试文件（可直接运行）\n2. Mock配置（如需要）\n3. 测试覆盖率分析\n4. 测试执行命令"
+      },
+      {
+        "id": "e2e-test",
+        "name": "5. E2E测试生成",
+        "requiresApproval": false,
+        "prompt": "# E2E测试生成阶段\n\n为完整的功能流程生成端到端测试。\n\n<feature_description>\n{{requirement}}\n</feature_description>\n\n<implementation>\n{{implemented_code}}\n</implementation>\n\n<e2e_setup>\nE2E框架: {{e2e_framework}}\n测试文件模式: {{e2e_pattern}}\n现有E2E示例: {{existing_e2e}}\n</e2e_setup>\n\n**测试场景**:\n- ✅ 用户完整操作流程\n- ✅ 成功路径测试\n- ✅ 错误处理测试\n- ✅ 边界条件测试\n- ✅ 多用户/并发场景（如适用）\n\n**输出**:\n1. 完整的E2E测试文件\n2. 测试数据准备脚本（如需要）\n3. 测试执行命令"
+      },
+      {
+        "id": "commit",
+        "name": "6. 提交代码",
+        "autoExecute": false,
+        "requiresApproval": true,
+        "prompt": "# 代码提交阶段\n\n根据本次开发的所有变更，生成合适的 Git commit 信息。\n\n<changes_summary>\n{{all_changes}}\n</changes_summary>\n\n<git_diff>\n{{git_diff}}\n</git_diff>\n\n**Commit Message格式** (遵循 Conventional Commits):\n```\n<type>(<scope>): <subject>\n\n<body>\n\n<footer>\n```\n\n**Type类型**:\n- feat: 新功能\n- fix: Bug修复\n- refactor: 重构\n- test: 添加测试\n- docs: 文档更新\n- style: 代码格式调整\n- perf: 性能优化\n\n**输出**:\n1. Commit message（完整格式）\n2. 需要添加到暂存区的文件列表\n3. Commit命令（可直接执行）"
+      }
+    ]
+  },
+  {
+    "id": "feature-complete-copy-1763972856693-copy-1763974329258",
+    "name": "功能开发完整流程 (副本) (副本)",
+    "icon": "🚀",
+    "category": "dev",
+    "description": "从需求到上线：开发 → Review → 单元测试 → E2E测试 → Commit",
+    "config": {
+      "includeContext": true,
+      "autoCommit": true,
+      "runTests": true
+    },
+    "steps": [
+      {
+        "id": "analyze",
+        "name": "1. 需求分析",
+        "requiresApproval": false,
+        "prompt": "# 需求分析阶段\n\n你是一位资深的技术架构师。请分析以下需求并给出技术方案。\n\n<requirement>\n{{requirement}}\n</requirement>\n\n<project_context>\n当前项目路径: {{project_path}}\n技术栈: {{tech_stack}}\n</project_context>\n\n<codebase_context>\n{{codebase_files}}\n</codebase_context>\n\n**请输出**:\n1. **功能拆解**: 将需求拆分为具体的子任务\n2. **技术方案**: \n   - 涉及的文件和模块\n   - 数据结构设计\n   - API设计（如有）\n   - 状态管理方案\n3. **依赖检查**: 需要新增的依赖\n4. **风险评估**: 潜在的技术风险\n5. **工作量评估**: 预估开发时间\n\n**输出格式**: 使用Markdown，清晰分段"
+      },
+      {
+        "id": "implement",
+        "name": "2. 代码实现",
+        "requiresApproval": false,
+        "prompt": "# 代码实现阶段\n\n基于上一步的技术方案，现在开始编写代码。\n\n<implementation_plan>\n{{previous_output}}\n</implementation_plan>\n\n<project_context>\n项目路径: {{project_path}}\n相关文件: {{related_files}}\n</project_context>\n\n**实现要求**:\n1. ✅ 遵循项目现有的代码风格和架构模式\n2. ✅ 使用项目已有的工具库和组件\n3. ✅ 添加必要的错误处理\n4. ✅ 添加适当的类型定义（TypeScript）\n5. ✅ 代码清晰可读，关键逻辑添加注释\n6. ✅ 考虑边界条件和异常情况\n\n**输出**:\n- 完整的代码文件（可直接使用）\n- 如需修改现有文件，提供完整的文件内容\n- 列出所有需要创建/修改的文件路径"
+      },
+      {
+        "id": "review",
+        "name": "3. 代码审查",
+        "requiresApproval": false,
+        "prompt": "# 代码审查阶段\n\n你是一位严格的代码审查专家。请review刚刚实现的代码。\n\n<implemented_code>\n{{previous_output}}\n</implemented_code>\n\n<git_diff>\n{{git_diff}}\n</git_diff>\n\n**审查维度**:\n- 🔒 **安全**: SQL注入、XSS、敏感信息泄露\n- ⚡ **性能**: 不必要的重渲染、N+1查询、内存泄漏\n- 🐛 **Bug风险**: 空值检查、边界条件、并发问题\n- 📖 **可读性**: 命名、注释、复杂度\n- 🏗️ **架构**: SOLID原则、设计模式是否合理\n- ✅ **测试覆盖**: 是否需要补充测试\n\n**输出格式**:\n## 🚨 严重问题 (Blocker)\n- [ ] 问题描述 | 文件:行号 | 修复建议\n\n## ⚠️ 重要问题 (Major)  \n- [ ] 问题描述 | 文件:行号 | 修复建议\n\n## 💡 优化建议 (Minor)\n- [ ] 建议描述\n\n## ✨ 优秀实践\n- 列出值得称赞的地方\n\n**如果有严重或重要问题，提供修复后的完整代码**"
+      },
+      {
+        "id": "unit-test",
+        "name": "4. 单元测试生成",
+        "requiresApproval": false,
+        "prompt": "# 单元测试生成阶段\n\n为刚刚实现的代码生成全面的单元测试。\n\n<code_to_test>\n{{implemented_code}}\n</code_to_test>\n\n<project_test_setup>\n测试框架: {{test_framework}}\n测试文件模式: {{test_pattern}}\n现有测试示例: {{existing_tests}}\n</project_test_setup>\n\n**测试要求**:\n- ✅ 覆盖所有公共方法/函数\n- ✅ 测试正常流程\n- ✅ 测试边界条件（空值、边界值）\n- ✅ 测试异常情况\n- ✅ Mock 外部依赖\n- ✅ 目标覆盖率: 90%+\n\n**输出**:\n1. 完整的测试文件（可直接运行）\n2. Mock配置（如需要）\n3. 测试覆盖率分析\n4. 测试执行命令"
+      },
+      {
+        "id": "e2e-test",
+        "name": "5. E2E测试生成",
+        "requiresApproval": false,
+        "prompt": "# E2E测试生成阶段\n\n为完整的功能流程生成端到端测试。\n\n<feature_description>\n{{requirement}}\n</feature_description>\n\n<implementation>\n{{implemented_code}}\n</implementation>\n\n<e2e_setup>\nE2E框架: {{e2e_framework}}\n测试文件模式: {{e2e_pattern}}\n现有E2E示例: {{existing_e2e}}\n</e2e_setup>\n\n**测试场景**:\n- ✅ 用户完整操作流程\n- ✅ 成功路径测试\n- ✅ 错误处理测试\n- ✅ 边界条件测试\n- ✅ 多用户/并发场景（如适用）\n\n**输出**:\n1. 完整的E2E测试文件\n2. 测试数据准备脚本（如需要）\n3. 测试执行命令"
+      },
+      {
+        "id": "commit",
+        "name": "6. 提交代码",
+        "autoExecute": false,
+        "requiresApproval": true,
+        "prompt": "# 代码提交阶段\n\n根据本次开发的所有变更，生成合适的 Git commit 信息。\n\n<changes_summary>\n{{all_changes}}\n</changes_summary>\n\n<git_diff>\n{{git_diff}}\n</git_diff>\n\n**Commit Message格式** (遵循 Conventional Commits):\n```\n<type>(<scope>): <subject>\n\n<body>\n\n<footer>\n```\n\n**Type类型**:\n- feat: 新功能\n- fix: Bug修复\n- refactor: 重构\n- test: 添加测试\n- docs: 文档更新\n- style: 代码格式调整\n- perf: 性能优化\n\n**输出**:\n1. Commit message（完整格式）\n2. 需要添加到暂存区的文件列表\n3. Commit命令（可直接执行）"
+      }
+    ]
+  },
+  {
+    "id": "component-doc-copy-1763977238096",
+    "name": "组件文档生成 (副本)",
+    "icon": "📗",
+    "category": "doc",
+    "description": "生成组件文档：Props → 示例 → 最佳实践",
+    "config": {
+      "includeContext": true
+    },
+    "steps": [
+      {
+        "id": "component-doc-gen",
+        "name": "生成文档",
+        "prompt": "为以下组件生成文档：\n\n<component_code>\n{{requirement}}\n</component_code>\n\n请输出：\n1. 组件概述\n2. Props说明（类型、默认值、必填）\n3. 使用示例\n4. 最佳实践\n5. 注意事项"
+      }
+    ]
+  }
+]
