@@ -1,3 +1,5 @@
+import { UI_DELAYS } from '../config/ui';
+
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -33,6 +35,6 @@ export function showCopyToast(success: boolean) {
   
   setTimeout(() => {
     toast.style.opacity = '0';
-    setTimeout(() => document.body.removeChild(toast), 300);
-  }, 2000);
+    setTimeout(() => document.body.removeChild(toast), UI_DELAYS.TOAST_FADE);
+  }, UI_DELAYS.TOAST_DISPLAY);
 }

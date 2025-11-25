@@ -3,9 +3,11 @@ import { claudeService } from '@/lib/claude-api';
 import { WorkflowEngine } from '@/lib/workflows/workflow-engine';
 import { FILE_OPERATION_TOOLS, createSystemPromptWithFileOps } from '@/lib/file-bridge/claude-tools';
 import { ServerFileOperations } from '@/lib/file-bridge/server-file-ops';
+import { WORKFLOW_CACHE, WORKFLOW_LIMITS } from '@/lib/config/workflow';
+import { CLAUDE_CONFIG } from '@/lib/config/claude';
 
 const projectContextCache = new Map<string, { context: any; timestamp: number }>();
-const CACHE_TTL = 5 * 60 * 1000;
+const CACHE_TTL = WORKFLOW_CACHE.PROJECT_CONTEXT_TTL;
 
 export async function POST(request: NextRequest) {
   try {
@@ -72,11 +74,11 @@ export async function POST(request: NextRequest) {
             })}\n\n`)
           );
 
-          const MAX_TOKENS = 50000;
+          const MAX_TOKENS = WORKFLOW_CACHE.MAX_TOKENS_PER_REQUEST;
 
-          if (currentStepOutput && currentStepOutput.conversations.length > 5) {
+          if (currentStepOutput && currentStepOutput.conversations.length > WORKFLOW_LIMITS.MAX_CONVERSATION_DISPLAY) {
             const estimatedTokens = currentStepOutput.conversations.reduce((sum: number, conv: any) => {
-              return sum + Math.ceil((conv.response.length + (conv.userInput?.length || 0)) / 4);
+              return sum + Math.ceil((conv.response.length + (conv.userInput?.length || 0)) / CLAUDE_CONFIG.CHARS_PER_TOKEN);
             }, 0);
 
             if (estimatedTokens > MAX_TOKENS && !currentStepOutput.conversations.some((c: any) => c.userInput === '[系统自动总结]')) {
@@ -84,10 +86,10 @@ export async function POST(request: NextRequest) {
                 .map((conv: any) => `${conv.userInput || ''}\n${conv.response}`)
                 .join('\n\n');
 
-              const summaryPrompt = `简要总结以下对话的关键决策和代码修改（500字内）:\n\n${conversationText.substring(0, 10000)}`;
+              const summaryPrompt = `简要总结以下对话的关键决策和代码修改（500字内）:\n\n${conversationText.substring(0, CLAUDE_CONFIG.SUMMARY_CONTEXT_LENGTH)}`;
 
               let summaryText = '';
-              for await (const chunk of claudeService.streamMessage(summaryPrompt, { maxTokens: 2000 })) {
+              for await (const chunk of claudeService.streamMessage(summaryPrompt, { maxTokens: CLAUDE_CONFIG.SUMMARY_MAX_TOKENS })) {
                 summaryText += chunk;
               }
               

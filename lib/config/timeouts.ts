@@ -1,0 +1,6 @@
+export const TIMEOUTS = {
+  API_REQUEST: 30000,
+  PROMPT_LOAD: 30000,
+  FILE_OPERATION: 10000,
+  TEST_TIMEOUT: 120 * 1000,
+} as const;

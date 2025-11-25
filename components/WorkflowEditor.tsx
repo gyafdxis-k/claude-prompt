@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Workflow, WorkflowStep } from '@/lib/workflows/workflow-templates';
 import { PromptTemplate } from '@/lib/prompts/prompt-scanner';
+import { TIMEOUTS } from '@/lib/config/timeouts';
 
 interface WorkflowEditorProps {
   isOpen: boolean;
@@ -40,7 +41,7 @@ export default function WorkflowEditor({ isOpen, onClose, onSave, onSaveAndUse, 
     setLoadError(null);
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      const timeoutId = setTimeout(() => controller.abort(), TIMEOUTS.PROMPT_LOAD);
       
       const response = await fetch('/api/prompts/scan', {
         signal: controller.signal

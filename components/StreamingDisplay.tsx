@@ -2,6 +2,7 @@
 
 import { memo, useMemo } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
+import { UI_LIMITS } from '@/lib/config/ui';
 
 interface StreamingDisplayProps {
   prompt?: string;
@@ -23,7 +24,7 @@ export default memo(function StreamingDisplay({ prompt, response, isStreaming, t
   // 限制 Prompt 显示长度，避免渲染过长内容
   const truncatedPrompt = useMemo(() => {
     if (!prompt) return '';
-    return prompt.length > 10000 ? prompt.substring(0, 10000) + '\n\n...(Prompt过长，已截断)' : prompt;
+    return prompt.length > UI_LIMITS.PROMPT_TRUNCATE_LENGTH ? prompt.substring(0, UI_LIMITS.PROMPT_TRUNCATE_LENGTH) + '\n\n...(Prompt过长，已截断)' : prompt;
   }, [prompt]);
 
   return (

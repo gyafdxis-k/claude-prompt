@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { EXTERNAL_URLS } from '@/lib/config/claude';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -36,7 +37,7 @@ export default function SettingsModal({ isOpen, onClose, apiKey, onSave }: Setti
             className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
           <p className="text-xs text-gray-500 mt-1">
-            在 <a href="https://console.anthropic.com/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
+            在 <a href={EXTERNAL_URLS.ANTHROPIC_CONSOLE} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">
               Anthropic Console
             </a> 获取 API Key
           </p>

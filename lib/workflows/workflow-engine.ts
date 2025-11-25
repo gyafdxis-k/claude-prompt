@@ -2,6 +2,8 @@ import { Workflow, WorkflowStep } from './workflow-templates';
 import { ClaudeService } from '../claude-api';
 import { ProjectScanner, ProjectContext } from '../context/project-scanner';
 import { GitService } from '../git/git-service';
+import { CLAUDE_CONFIG } from '../config/claude';
+import { WORKFLOW_LIMITS } from '../config/workflow';
 
 export interface ConversationTurn {
   prompt: string;
@@ -73,7 +75,7 @@ export class WorkflowEngine {
   }
 
   private estimateTokens(text: string): number {
-    return Math.ceil(text.length / 4);
+    return Math.ceil(text.length / CLAUDE_CONFIG.CHARS_PER_TOKEN);
   }
 
   private async summarizeConversations(conversations: ConversationTurn[]): Promise<string> {
@@ -208,14 +210,14 @@ export class WorkflowEngine {
       console.log(`  - ${o.stepName}: ${o.conversations.length} 轮对话`);
     });
 
-    const MAX_STEP_TOKENS = 8000; // 降低从 15000 到 8000
-    const MAX_TOTAL_HISTORY = 20000; // 总历史记录不超过 20000 字符
+    const MAX_STEP_TOKENS = WORKFLOW_LIMITS.MAX_STEP_TOKENS;
+    const MAX_TOTAL_HISTORY = WORKFLOW_LIMITS.MAX_TOTAL_HISTORY;
     
     const allPreviousSteps = completedSteps
       .map(o => {
         // 只保留最后一轮对话的摘要
         const lastConv = o.conversations[o.conversations.length - 1];
-        const summary = `\n## ${o.stepName}\n${o.conversations.length > 1 ? `共 ${o.conversations.length} 轮对话，` : ''}最终输出:\n${lastConv.response.substring(0, 2000)}${lastConv.response.length > 2000 ? '...(已截断)' : ''}`;
+        const summary = `\n## ${o.stepName}\n${o.conversations.length > 1 ? `共 ${o.conversations.length} 轮对话，` : ''}最终输出:\n${lastConv.response.substring(0, WORKFLOW_LIMITS.RESPONSE_TRUNCATE_LENGTH)}${lastConv.response.length > WORKFLOW_LIMITS.RESPONSE_TRUNCATE_LENGTH ? '...(已截断)' : ''}`;
         
         return summary;
       })
@@ -236,16 +238,15 @@ export class WorkflowEngine {
     }
 
     if (hasPreviousConversations) {
-      // 只保留最近3轮对话
-      const recentConversations = currentStepOutput!.conversations.slice(-3);
+      const recentConversations = currentStepOutput!.conversations.slice(-WORKFLOW_LIMITS.MAX_CONVERSATION_DISPLAY);
       const conversationHistory = recentConversations
         .map((conv, index) => {
           const actualIndex = currentStepOutput!.conversations.length - recentConversations.length + index;
           let history = `\n### 第 ${actualIndex + 1} 轮\n`;
           if (conv.userInput && conv.userInput.trim()) {
-            history += `开发者: ${conv.userInput.substring(0, 500)}${conv.userInput.length > 500 ? '...' : ''}\n\n`;
+            history += `开发者: ${conv.userInput.substring(0, WORKFLOW_LIMITS.USER_INPUT_TRUNCATE_LENGTH)}${conv.userInput.length > WORKFLOW_LIMITS.USER_INPUT_TRUNCATE_LENGTH ? '...' : ''}\n\n`;
           }
-          history += `Claude: ${conv.response.substring(0, 1500)}${conv.response.length > 1500 ? '...(已截断)' : ''}`;
+          history += `Claude: ${conv.response.substring(0, WORKFLOW_LIMITS.HISTORY_RESPONSE_LENGTH)}${conv.response.length > WORKFLOW_LIMITS.HISTORY_RESPONSE_LENGTH ? '...(已截断)' : ''}`;
           return history;
         })
         .join('\n---\n');

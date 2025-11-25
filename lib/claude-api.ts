@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { CLAUDE_CONFIG } from './config/claude';
 
 export class ClaudeService {
   private client: Anthropic | null = null;
@@ -42,9 +43,9 @@ export class ClaudeService {
     }
 
     const response = await this.client.messages.create({
-      model: options?.model || process.env.NEXT_PUBLIC_CLAUDE_MODEL || 'claude-sonnet-4-20250514',
-      max_tokens: options?.maxTokens || parseInt(process.env.NEXT_PUBLIC_MAX_TOKENS || '4096'),
-      temperature: options?.temperature || parseFloat(process.env.NEXT_PUBLIC_TEMPERATURE || '0.7'),
+      model: options?.model || CLAUDE_CONFIG.DEFAULT_MODEL,
+      max_tokens: options?.maxTokens || CLAUDE_CONFIG.DEFAULT_MAX_TOKENS,
+      temperature: options?.temperature || CLAUDE_CONFIG.DEFAULT_TEMPERATURE,
       messages: [
         {
           role: 'user',
@@ -79,9 +80,8 @@ export class ClaudeService {
       throw new Error('Claude API 未初始化，请先设置 API Key');
     }
 
-    const model = options?.model || process.env.NEXT_PUBLIC_CLAUDE_MODEL || 'claude-sonnet-4-20250514';
-    const maxTokens = options?.maxTokens || 
-                      parseInt(process.env.NEXT_PUBLIC_MAX_TOKENS || '4096');
+    const model = options?.model || CLAUDE_CONFIG.DEFAULT_MODEL;
+    const maxTokens = options?.maxTokens || CLAUDE_CONFIG.DEFAULT_MAX_TOKENS;
     
     console.log('[Claude Service] 模型:', model);
     console.log('[Claude Service] Max Tokens:', maxTokens);
@@ -100,7 +100,7 @@ export class ClaudeService {
         const requestParams: any = {
           model,
           max_tokens: maxTokens,
-          temperature: options?.temperature || parseFloat(process.env.NEXT_PUBLIC_TEMPERATURE || '0.7'),
+          temperature: options?.temperature || CLAUDE_CONFIG.DEFAULT_TEMPERATURE,
           messages,
           stream: true
         };

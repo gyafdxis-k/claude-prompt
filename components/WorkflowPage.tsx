@@ -14,6 +14,7 @@ import WorkflowProgress from './WorkflowProgress';
 import PromptEditorModal from './PromptEditorModal';
 import TemplateBindingCard from './TemplateBindingCard';
 import { TemplateBinding, renderTemplate } from '@/lib/template-binding';
+import { UI_LIMITS } from '@/lib/config/ui';
 
 interface WorkflowPageProps {
   onExecuteStep: (step: WorkflowStep, inputs: Record<string, any>) => Promise<void>;
@@ -48,7 +49,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
   }, []);
   
   const shouldShowExpandButton = useCallback((content: string) => {
-    return content.length > 300;
+    return content.length > UI_LIMITS.MESSAGE_EXPAND_THRESHOLD;
   }, []);
   const [showContextModal, setShowContextModal] = useState(false);
   const [selectedOutputIndex, setSelectedOutputIndex] = useState<number | null>(null);
@@ -559,7 +560,7 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                           {currentOutput.completed && (
                             <span className="px-2 py-1 text-xs bg-green-100 text-green-800 rounded">✓ 已完成</span>
                           )}
-                          {currentOutput.conversations.length > 5 && (
+                          {currentOutput.conversations.length > UI_LIMITS.CONVERSATION_HISTORY_DISPLAY && (
                             <button
                               onClick={() => setShowOldConversations(!showOldConversations)}
                               className="px-3 py-1 text-xs bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
@@ -571,9 +572,9 @@ export default function WorkflowPage({ onExecuteStep, onSelectWorkflow, onComple
                         
                         <div className="space-y-3">
                           {currentOutput.conversations
-                            .slice(showOldConversations ? 0 : Math.max(0, currentOutput.conversations.length - 5))
+                            .slice(showOldConversations ? 0 : Math.max(0, currentOutput.conversations.length - UI_LIMITS.CONVERSATION_HISTORY_DISPLAY))
                             .map((conv, index) => {
-                              const actualIndex = showOldConversations ? index : Math.max(0, currentOutput.conversations.length - 5) + index;
+                              const actualIndex = showOldConversations ? index : Math.max(0, currentOutput.conversations.length - UI_LIMITS.CONVERSATION_HISTORY_DISPLAY) + index;
                               return (
                             <div key={actualIndex} className="space-y-3">
                               {conv.userInput && conv.userInput.trim() && (

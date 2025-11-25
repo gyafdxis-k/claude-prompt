@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { FILE_SYSTEM } from '../config/constants';
 
 export interface ProjectContext {
   projectPath: string;
@@ -22,30 +23,16 @@ export interface FileNode {
   size?: number;
 }
 
-const IGNORE_PATTERNS = [
-  'node_modules',
-  '.git',
-  '.next',
-  'dist',
-  'build',
-  'coverage',
-  '.DS_Store',
-  '*.log',
-  '.env.local',
-  '.turbo'
-];
+const IGNORE_PATTERNS = FILE_SYSTEM.IGNORE_PATTERNS;
 
 const IMPORTANT_FILES = [
-  'package.json',
-  'tsconfig.json',
-  'next.config.js',
+  ...FILE_SYSTEM.IMPORTANT_FILES,
   'next.config.ts',
   'vite.config.ts',
   'vitest.config.ts',
   'jest.config.js',
   'playwright.config.ts',
   'cypress.config.ts',
-  'README.md',
   'CLAUDE.md',
   '.cursorrules'
 ];
@@ -152,7 +139,7 @@ export class ProjectScanner {
   }
 
   private buildFileTree(dirPath: string, depth: number = 0): FileNode[] {
-    if (depth > 3) return [];
+    if (depth > FILE_SYSTEM.MAX_SCAN_DEPTH) return [];
 
     try {
       const entries = fs.readdirSync(dirPath, { withFileTypes: true });

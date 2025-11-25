@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { copyToClipboard, showCopyToast } from '@/lib/utils/clipboard';
+import { UI_DELAYS } from '@/lib/config/ui';
 
 interface CopyButtonProps {
   text: string;
@@ -19,7 +20,7 @@ export default function CopyButton({ text, label = '复制', className = '', siz
     const success = await copyToClipboard(text);
     showCopyToast(success);
     
-    setTimeout(() => setCopying(false), 1000);
+    setTimeout(() => setCopying(false), UI_DELAYS.BUTTON_RESET);
   };
 
   const sizeClasses = {
