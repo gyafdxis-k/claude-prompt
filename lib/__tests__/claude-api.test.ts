@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { ClaudeService } from '../claude-api';
 import Anthropic from '@anthropic-ai/sdk';
+import { CLAUDE_CONFIG } from '../config/claude';
 
 vi.mock('@anthropic-ai/sdk');
 
@@ -116,7 +117,7 @@ describe('ClaudeService', () => {
       expect(response).toBe('Test response');
       expect(mockClient.messages.create).toHaveBeenCalledWith({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 8192,
+        max_tokens: CLAUDE_CONFIG.DEFAULT_MAX_TOKENS,
         temperature: 0.7,
         messages: [{ role: 'user', content: 'Test prompt' }]
       });
@@ -212,7 +213,7 @@ describe('ClaudeService', () => {
       expect(mockClient.messages.create).toHaveBeenCalledWith(
         expect.objectContaining({
           model: 'claude-sonnet-4-20250514',
-          max_tokens: 8192,
+          max_tokens: CLAUDE_CONFIG.DEFAULT_MAX_TOKENS,
           temperature: 0.7,
           stream: true
         })
@@ -384,9 +385,7 @@ describe('ClaudeService', () => {
       await expect(generator.next()).rejects.toThrow('Stream error');
     });
 
-    it('should use environment variable for max tokens', async () => {
-      process.env.NEXT_PUBLIC_CLAUDE_CODE_MAX_OUTPUT_TOKENS = '16384';
-      
+    it('should use custom max tokens from options', async () => {
       const mockStream = [{ type: 'message_stop' }];
       mockClient.messages.create.mockResolvedValue(
         (async function* () {
@@ -396,7 +395,7 @@ describe('ClaudeService', () => {
         })()
       );
 
-      const generator = service.streamMessage('Test');
+      const generator = service.streamMessage('Test', { maxTokens: 16384 });
       await generator.next();
 
       expect(mockClient.messages.create).toHaveBeenCalledWith(
