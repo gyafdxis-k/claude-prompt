@@ -125,20 +125,24 @@ interface CategoryBadgeProps {
 }
 
 function CategoryBadge({ category, selected, onClick, removable = true }: CategoryBadgeProps) {
-  return (
-    <span
-      className={`
-        inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border
-        transition-all cursor-pointer
-        ${selected ? CATEGORY_COLORS[category.color] : 'bg-gray-100 text-gray-700 border-gray-200'}
-        ${removable ? 'hover:opacity-80' : ''}
-      `}
-      onClick={removable ? onClick : undefined}
-      title={category.description}
-    >
-      <span>{category.icon}</span>
-      <span>{category.name}</span>
-      {removable && (
+  if (removable) {
+    return (
+      <span
+        className={`
+          inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border
+          transition-all
+          ${selected ? CATEGORY_COLORS[category.color] : 'bg-gray-100 text-gray-700 border-gray-200'}
+        `}
+        title={category.description}
+      >
+        <button
+          type="button"
+          onClick={onClick}
+          className="inline-flex items-center gap-1.5 hover:opacity-80"
+        >
+          <span>{category.icon}</span>
+          <span>{category.name}</span>
+        </button>
         <button
           type="button"
           className="ml-1 hover:text-red-600"
@@ -149,7 +153,23 @@ function CategoryBadge({ category, selected, onClick, removable = true }: Catego
         >
           ×
         </button>
-      )}
+      </span>
+    );
+  }
+  
+  return (
+    <span
+      className={`
+        inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border
+        transition-all cursor-pointer
+        ${selected ? CATEGORY_COLORS[category.color] : 'bg-gray-100 text-gray-700 border-gray-200'}
+        hover:opacity-80
+      `}
+      onClick={onClick}
+      title={category.description}
+    >
+      <span>{category.icon}</span>
+      <span>{category.name}</span>
     </span>
   );
 }
