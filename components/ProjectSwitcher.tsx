@@ -105,18 +105,20 @@ export default function ProjectSwitcher({ currentPath, onSwitch }: ProjectSwitch
           ) : (
             <div className="max-h-64 overflow-y-auto">
               {recentProjects.map((project) => (
-                <button
+                <div
                   key={project.path}
-                  onClick={() => {
-                    onSwitch(project.path);
-                    setShowDropdown(false);
-                  }}
-                  className={`w-full text-left px-4 py-2.5 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0 ${
+                  className={`w-full px-4 py-2.5 hover:bg-gray-50 transition-colors border-b border-gray-50 last:border-b-0 ${
                     project.path === currentPath ? 'bg-blue-50' : ''
                   }`}
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
+                    <button
+                      onClick={() => {
+                        onSwitch(project.path);
+                        setShowDropdown(false);
+                      }}
+                      className="flex-1 min-w-0 text-left"
+                    >
                       <div className="flex items-center gap-2">
                         <span className="text-lg">📁</span>
                         <span className="font-medium text-sm truncate">
@@ -137,7 +139,7 @@ export default function ProjectSwitcher({ currentPath, onSwitch }: ProjectSwitch
                           minute: '2-digit'
                         })}
                       </div>
-                    </div>
+                    </button>
                     <button
                       onClick={(e) => removeProject(project.path, e)}
                       className="text-gray-400 hover:text-red-600 transition-colors px-2"
@@ -146,7 +148,7 @@ export default function ProjectSwitcher({ currentPath, onSwitch }: ProjectSwitch
                       ×
                     </button>
                   </div>
-                </button>
+                </div>
               ))}
             </div>
           )}
